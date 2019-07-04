@@ -1,4 +1,4 @@
-# Dintero.Checkout.Episerver
+# Dintero.Checkout.Episerver Plugin
 
 
 
