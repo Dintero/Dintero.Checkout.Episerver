@@ -1,0 +1,13 @@
+packages
+**/bin
+**/obj
+*.suo
+*.user
+*.log
+Publish/
+us.stackdump
+!/.nuget/NuGet.exe
+GeneralTestApplication/
+*.ldf
+*.mdf
+/.vs
