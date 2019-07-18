@@ -7,8 +7,13 @@ namespace Dintero.Checkout.Episerver.Helpers
 {
     public static class UriUtil
     {
-        private static Injected<IContentLoader> _contentLoader = default(Injected<IContentLoader>);
-        private static Injected<UrlResolver> _urlResolver = default(Injected<UrlResolver>);
+        private static readonly Injected<IContentLoader> ContentLoader;
+        private static readonly Injected<UrlResolver> UrlResolver;
+        static UriUtil()
+        {
+            UrlResolver = default;
+            ContentLoader = default;
+        }
 
         /// <summary>
         /// Add query parameter to url
@@ -47,6 +52,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                     {
                         str = index2 != 0 ? str + "&" + strArray[index2] : str + strArray[index2];
                     }
+
                     return url.Substring(0, num + 1) + str;
                 }
             }
@@ -58,19 +64,19 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// Gets url from start page's reference property.
         /// </summary>
         /// <param name="propertyName">The property name.</param>
-        /// <param name="isAbsolute">Whwther to return relative or absolute url.</param>
+        /// <param name="isAbsolute">Whether to return relative or absolute url.</param>
         /// <returns>The friendly url.</returns>
         public static string GetUrlFromStartPageReferenceProperty(string propertyName, bool isAbsolute = false)
         {
-            var url = _urlResolver.Service.GetUrl(ContentReference.StartPage);
+            var url = UrlResolver.Service.GetUrl(ContentReference.StartPage);
 
-            var startPageData = _contentLoader.Service.Get<PageData>(ContentReference.StartPage);
+            var startPageData = ContentLoader.Service.Get<PageData>(ContentReference.StartPage);
             if (startPageData != null)
             {
                 var contentLink = startPageData.Property[propertyName]?.Value as ContentReference;
                 if (!ContentReference.IsNullOrEmpty(contentLink))
                 {
-                    url = _urlResolver.Service.GetUrl(contentLink);
+                    url = UrlResolver.Service.GetUrl(contentLink);
                 }
             }
 
@@ -84,7 +90,7 @@ namespace Dintero.Checkout.Episerver.Helpers
 
         public static string GetBaseUrl()
         {
-            return UriSupport.AbsoluteUrlBySettings(_urlResolver.Service.GetUrl(ContentReference.StartPage));
+            return UriSupport.AbsoluteUrlBySettings(UrlResolver.Service.GetUrl(ContentReference.StartPage));
         }
     }
 }

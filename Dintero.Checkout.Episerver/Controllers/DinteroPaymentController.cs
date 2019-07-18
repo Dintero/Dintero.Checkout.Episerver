@@ -2,7 +2,6 @@
 using Dintero.Checkout.Episerver.PageTypes;
 using EPiServer.Commerce.Order;
 using EPiServer.Editor;
-using EPiServer.Logging;
 using EPiServer.Security;
 using EPiServer.ServiceLocation;
 using EPiServer.Web.Mvc;
@@ -10,7 +9,6 @@ using Mediachase.Commerce.Orders;
 using Mediachase.Commerce.Orders.Exceptions;
 using Mediachase.Commerce.Security;
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
@@ -20,7 +18,6 @@ namespace Dintero.Checkout.Episerver.Controllers
 {
     public class DinteroPaymentController : PageController<DinteroPage>
     {
-        private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroPaymentController));
         private readonly IOrderRepository _orderRepository;
         private readonly DinteroRequestsHelper _requestsHelper;
 
@@ -54,7 +51,7 @@ namespace Dintero.Checkout.Episerver.Controllers
                 throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Payment was not specified");
             }
 
-            InitializeReponse();
+            InitializeResponse();
 
             if (string.IsNullOrWhiteSpace(transaction_id) && string.IsNullOrWhiteSpace(error))
             {
@@ -68,12 +65,12 @@ namespace Dintero.Checkout.Episerver.Controllers
             else
             {
                 var cancelUrl =
-                    UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage"); // get link to Checkout page
+                    UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage");
                 cancelUrl = UriUtil.AddQueryString(cancelUrl, "success", "false");
                 cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
                 var gateway = new DinteroPaymentGateway();
 
-                var redirectUrl = cancelUrl;
+                string redirectUrl;
 
                 if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) &&
                     !string.IsNullOrWhiteSpace(merchant_reference))
@@ -94,7 +91,7 @@ namespace Dintero.Checkout.Episerver.Controllers
             return new EmptyResult();
         }
 
-        private void InitializeReponse()
+        private void InitializeResponse()
         {
             Response.Cache.SetCacheability(HttpCacheability.NoCache);
             Response.Cache.SetExpires(DateTime.Now.AddSeconds(-1));

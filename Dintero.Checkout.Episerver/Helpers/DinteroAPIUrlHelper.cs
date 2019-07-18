@@ -37,7 +37,7 @@
             return string.Format(BaseTransactionUrlTemplateUrl, transactionId, "refund");
         }
 
-        public static string GetTransactionCancelUrl(string transactionId)
+        public static string GetTransactionVoidUrl(string transactionId)
         {
             return string.Format(BaseTransactionUrlTemplateUrl, transactionId, "void");
         }

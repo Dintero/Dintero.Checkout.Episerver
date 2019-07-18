@@ -37,7 +37,7 @@ namespace Dintero.Checkout.Episerver.CommerceManager
             {
                 SetTextBoxValue(DinteroConstants.AccountIdParameter, AccountId);
                 SetTextBoxValue(DinteroConstants.ClientIdParameter, ClientId);
-                SetTextBoxValue(DinteroConstants.ClientSecretIdParamter, ClientSecretId);
+                SetTextBoxValue(DinteroConstants.ClientSecretIdParameter, ClientSecretId);
                 SetTextBoxValue(DinteroConstants.ProfileIdParameter, ProfileId);
             }
             else
@@ -102,7 +102,7 @@ namespace Dintero.Checkout.Episerver.CommerceManager
 
                     SaveParameter(DinteroConstants.AccountIdParameter, AccountId, paymentMethodId);
                     SaveParameter(DinteroConstants.ClientIdParameter, ClientId, paymentMethodId);
-                    SaveParameter(DinteroConstants.ClientSecretIdParamter, ClientSecretId, paymentMethodId);
+                    SaveParameter(DinteroConstants.ClientSecretIdParameter, ClientSecretId, paymentMethodId);
                     SaveParameter(DinteroConstants.ProfileIdParameter, ProfileId, paymentMethodId);
                 }
             }

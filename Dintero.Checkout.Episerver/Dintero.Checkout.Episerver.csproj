@@ -243,6 +243,7 @@
     <Compile Include="Models\DinteroCaptureRequest.cs" />
     <Compile Include="Models\DinteroCreateSessionRequest.cs" />
     <Compile Include="Models\DinteroCaptureResponse.cs" />
+    <Compile Include="Models\DinteroVoidResponse.cs" />
     <Compile Include="Models\DinteroRefundResponse.cs" />
     <Compile Include="Models\DinteroTransactionActionResponse.cs" />
     <Compile Include="Models\DinteroCreateSessionResponse.cs" />

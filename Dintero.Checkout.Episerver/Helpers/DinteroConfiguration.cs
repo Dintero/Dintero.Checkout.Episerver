@@ -9,8 +9,6 @@ namespace Dintero.Checkout.Episerver.Helpers
 {
     public class DinteroConfiguration
     {
-        public const string DinteroSystemName = "Dintero";
-
         private PaymentMethodDto _paymentMethodDto;
         private IDictionary<string, string> _settings;
 
@@ -24,9 +22,7 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <summary>
         /// Initializes a new instance of <see cref="DinteroConfiguration"/>.
         /// </summary>
-        public DinteroConfiguration() : this(null)
-        {
-        }
+        public DinteroConfiguration() : this(null) { }
 
         /// <summary>
         /// Initializes a new instance of <see cref="DinteroConfiguration"/> with specific settings.
@@ -39,8 +35,8 @@ namespace Dintero.Checkout.Episerver.Helpers
 
         public bool IsValid()
         {
-            return !(string.IsNullOrWhiteSpace(AccountId) || string.IsNullOrWhiteSpace(ClientId)
-                || string.IsNullOrWhiteSpace(ClientSecretId) || string.IsNullOrWhiteSpace(ProfileId));
+            return !(string.IsNullOrWhiteSpace(AccountId) || string.IsNullOrWhiteSpace(ClientId) ||
+                     string.IsNullOrWhiteSpace(ClientSecretId) || string.IsNullOrWhiteSpace(ProfileId));
         }
 
         /// <summary>
@@ -49,9 +45,12 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <param name="paymentMethodDto">The payment method dto.</param>
         /// <param name="parameterName">The parameter name.</param>
         /// <returns>The parameter row.</returns>
-        public static PaymentMethodDto.PaymentMethodParameterRow GetParameterByName(PaymentMethodDto paymentMethodDto, string parameterName)
+        public static PaymentMethodDto.PaymentMethodParameterRow GetParameterByName(PaymentMethodDto paymentMethodDto,
+            string parameterName)
         {
-            var rowArray = (PaymentMethodDto.PaymentMethodParameterRow[])paymentMethodDto.PaymentMethodParameter.Select(string.Format("Parameter = '{0}'", parameterName));
+            var rowArray =
+                (PaymentMethodDto.PaymentMethodParameterRow[]) paymentMethodDto.PaymentMethodParameter.Select(
+                    $"Parameter = '{parameterName}'");
             return rowArray.Length > 0 ? rowArray[0] : null;
         }
 
@@ -61,10 +60,11 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <returns>The Dintero payment method.</returns>
         public static PaymentMethodDto GetDinteroPaymentMethod()
         {
-            return PaymentManager.GetPaymentMethodBySystemName(DinteroSystemName, SiteContext.Current.LanguageName);
+            return PaymentManager.GetPaymentMethodBySystemName(DinteroConstants.DinteroSystemName,
+                SiteContext.Current.LanguageName);
         }
 
-        protected virtual void Initialize(IDictionary<string, string> settings)
+        protected void Initialize(IDictionary<string, string> settings)
         {
             _paymentMethodDto = GetDinteroPaymentMethod();
             PaymentMethodId = GetPaymentMethodId();
@@ -75,9 +75,8 @@ namespace Dintero.Checkout.Episerver.Helpers
 
         private IDictionary<string, string> GetSettings()
         {
-            return _paymentMethodDto.PaymentMethod.FirstOrDefault()
-                                   ?.GetPaymentMethodParameterRows()
-                                   ?.ToDictionary(row => row.Parameter, row => row.Value);
+            return _paymentMethodDto.PaymentMethod.FirstOrDefault()?.GetPaymentMethodParameterRows()
+                ?.ToDictionary(row => row.Parameter, row => row.Value);
         }
 
         private void GetParametersValues()
@@ -86,7 +85,7 @@ namespace Dintero.Checkout.Episerver.Helpers
             {
                 AccountId = GetParameterValue(DinteroConstants.AccountIdParameter);
                 ClientId = GetParameterValue(DinteroConstants.ClientIdParameter);
-                ClientSecretId = GetParameterValue(DinteroConstants.ClientSecretIdParamter);
+                ClientSecretId = GetParameterValue(DinteroConstants.ClientSecretIdParameter);
                 ProfileId = GetParameterValue(DinteroConstants.ProfileIdParameter);
             }
         }
@@ -98,9 +97,9 @@ namespace Dintero.Checkout.Episerver.Helpers
 
         private Guid GetPaymentMethodId()
         {
-            var dinteroPaymentMethodRow = _paymentMethodDto.PaymentMethod.Rows[0] as PaymentMethodDto.PaymentMethodRow;
-            var paymentMethodId = dinteroPaymentMethodRow != null ? dinteroPaymentMethodRow.PaymentMethodId : Guid.Empty;
-            return paymentMethodId;
+            return _paymentMethodDto.PaymentMethod.Rows[0] is PaymentMethodDto.PaymentMethodRow dinteroPaymentMethodRow
+                ? dinteroPaymentMethodRow.PaymentMethodId
+                : Guid.Empty;
         }
     }
 }

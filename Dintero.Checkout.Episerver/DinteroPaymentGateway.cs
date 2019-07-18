@@ -99,6 +99,20 @@ namespace Dintero.Checkout.Episerver
                            declineReason: {result.Error.Message}");
                 }
 
+                if (payment.TransactionType == TransactionType.Void.ToString())
+                {
+                    var result = _requestsHelper.VoidTransaction(payment);
+                    if (result.Error == null)
+                    {
+                        return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
+                    }
+
+                    return PaymentProcessingResult.CreateUnsuccessfulResult(
+                        $@"There was an error while voiding payment with Dintero:
+                           code: {result.Error.Code};
+                           declineReason: {result.Error.Message}");
+                }
+
                 if (payment.TransactionType == TransactionType.Credit.ToString())
                 {
                     var transactionId = payment.TransactionID;

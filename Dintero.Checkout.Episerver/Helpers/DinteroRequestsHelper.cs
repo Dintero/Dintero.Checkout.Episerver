@@ -234,6 +234,44 @@ namespace Dintero.Checkout.Episerver.Helpers
         }
 
         /// <summary>
+        /// Void transaction
+        /// </summary>
+        /// <param name="payment"></param>
+        /// <returns></returns>
+        public DinteroVoidResponse VoidTransaction(IPayment payment)
+        {
+            DinteroVoidResponse result = null;
+
+            if (Configuration.IsValid())
+            {
+                var url = DinteroAPIUrlHelper.GetTransactionVoidUrl(payment.TransactionID);
+
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    try
+                    {
+                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
+
+                        var response = client.PostAsync(url, null).Result;
+
+                        if (response.StatusCode == HttpStatusCode.OK)
+                        {
+                            result = response.Content.ReadAsAsync<DinteroVoidResponse>().Result;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        throw;
+                    }
+
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Refund transaction
         /// </summary>
         /// <param name="payment"></param>
