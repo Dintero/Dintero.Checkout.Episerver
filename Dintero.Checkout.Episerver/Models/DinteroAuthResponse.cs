@@ -2,7 +2,7 @@
 
 namespace Dintero.Checkout.Episerver.Models
 {
-    public class DinteroAuthResponse
+    public class DinteroAuthResponse : BaseDinteroResponse
     {
         [JsonProperty(PropertyName = "access_token")]
         public string AccessToken { get; set; }

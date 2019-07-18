@@ -238,9 +238,13 @@
     <Compile Include="Helpers\DinteroConstants.cs" />
     <Compile Include="Helpers\DinteroRequestsHelper.cs" />
     <Compile Include="Helpers\UriUtil.cs" />
+    <Compile Include="Models\BaseDinteroResponse.cs" />
+    <Compile Include="Models\DinteroRefundRequest.cs" />
     <Compile Include="Models\DinteroCaptureRequest.cs" />
     <Compile Include="Models\DinteroCreateSessionRequest.cs" />
     <Compile Include="Models\DinteroCaptureResponse.cs" />
+    <Compile Include="Models\DinteroRefundResponse.cs" />
+    <Compile Include="Models\DinteroTransactionActionResponse.cs" />
     <Compile Include="Models\DinteroCreateSessionResponse.cs" />
     <Compile Include="Models\DinteroAuthResponse.cs" />
     <Compile Include="Models\DinteroAddress.cs" />
@@ -249,6 +253,7 @@
     <Compile Include="Models\DinteroOrder.cs" />
     <Compile Include="Models\DinteroCustomer.cs" />
     <Compile Include="Models\DinteroResponseError.cs" />
+    <Compile Include="Models\DinteroTransactionUrlSetting.cs" />
     <Compile Include="Models\DinteroUrlSetting.cs" />
     <Compile Include="Models\PaymentProcessingResult.cs" />
     <Compile Include="PageTypes\DinteroPage.cs" />

@@ -116,59 +116,63 @@ namespace Dintero.Checkout.Episerver.Helpers
                     try
                     {
                         var orderForm = currentCart.Forms.FirstOrDefault(f => f.Payments.Contains(payment));
-                        var shippingAddress = orderForm.Shipments.First().ShippingAddress;
 
-                        var client = GetHttpClient("Bearer", accessToken);
-
-                        var orderNumber = _orderNumberGenerator.GenerateOrderNumber(currentCart);
-
-                        var request = new DinteroCreateSessionRequest
+                        if (orderForm != null)
                         {
-                            UrlSetting = new DinteroUrlSetting
-                            {
-                                ReturnUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true),
-                                CallbackUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true)
-                            },
-                            Customer = new DinteroCustomer
-                            {
-                                Email = payment.BillingAddress.Email,
-                                PhoneNumber = payment.BillingAddress.DaytimePhoneNumber
-                            },
-                            Order = new DinteroOrder
-                            {
-                                Amount = payment.Amount,
-                                VatAmount = payment.Amount, // TODO: resolve VAT,
-                                Currency = currentCart.Currency.CurrencyCode,
-                                MerchantReference = orderNumber,
-                                BillingAddress = new DinteroAddress
-                                {
-                                    FirstName = payment.BillingAddress.FirstName,
-                                    LastName = payment.BillingAddress.LastName,
-                                    AddressLine = $"{payment.BillingAddress.Line1} {payment.BillingAddress.Line2}",
-                                    PostalCode = payment.BillingAddress.PostalCode,
-                                    PostalPlace = payment.BillingAddress.City,
-                                    Country = payment.BillingAddress.CountryCode
-                                },
-                                ShippingAddress = new DinteroAddress
-                                {
-                                    FirstName = shippingAddress.FirstName,
-                                    LastName = shippingAddress.LastName,
-                                    AddressLine = $"{shippingAddress.Line1} {shippingAddress.Line2}",
-                                    PostalCode = shippingAddress.PostalCode,
-                                    PostalPlace = shippingAddress.City,
-                                    Country = shippingAddress.CountryCode
-                                },
-                                Items = ConvertOrderLineItems(currentCart),
-                                PartialPayment = false
-                            },
-                            ProfileId = Configuration.ProfileId
-                        };
+                            var shippingAddress = orderForm.Shipments.First().ShippingAddress;
 
-                        var response = await client.PostAsJsonAsync(url, request);
+                            var client = GetHttpClient("Bearer", accessToken);
 
-                        if (response.StatusCode == HttpStatusCode.OK)
-                        {
-                            sessionData = await response.Content.ReadAsAsync<DinteroCreateSessionResponse>();
+                            var orderNumber = _orderNumberGenerator.GenerateOrderNumber(currentCart);
+
+                            var request = new DinteroCreateSessionRequest
+                            {
+                                UrlSetting = new DinteroUrlSetting
+                                {
+                                    ReturnUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true),
+                                    CallbackUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true)
+                                },
+                                Customer = new DinteroCustomer
+                                {
+                                    Email = payment.BillingAddress.Email,
+                                    PhoneNumber = payment.BillingAddress.DaytimePhoneNumber
+                                },
+                                Order = new DinteroOrder
+                                {
+                                    Amount = payment.Amount,
+                                    VatAmount = payment.Amount, // TODO: resolve VAT,
+                                    Currency = currentCart.Currency.CurrencyCode,
+                                    MerchantReference = orderNumber,
+                                    BillingAddress = new DinteroAddress
+                                    {
+                                        FirstName = payment.BillingAddress.FirstName,
+                                        LastName = payment.BillingAddress.LastName,
+                                        AddressLine = $"{payment.BillingAddress.Line1} {payment.BillingAddress.Line2}",
+                                        PostalCode = payment.BillingAddress.PostalCode,
+                                        PostalPlace = payment.BillingAddress.City,
+                                        Country = payment.BillingAddress.CountryCode
+                                    },
+                                    ShippingAddress = new DinteroAddress
+                                    {
+                                        FirstName = shippingAddress.FirstName,
+                                        LastName = shippingAddress.LastName,
+                                        AddressLine = $"{shippingAddress.Line1} {shippingAddress.Line2}",
+                                        PostalCode = shippingAddress.PostalCode,
+                                        PostalPlace = shippingAddress.City,
+                                        Country = shippingAddress.CountryCode
+                                    },
+                                    Items = ConvertOrderLineItems(currentCart),
+                                    PartialPayment = false
+                                },
+                                ProfileId = Configuration.ProfileId
+                            };
+
+                            var response = await client.PostAsJsonAsync(url, request);
+
+                            if (response.StatusCode == HttpStatusCode.OK)
+                            {
+                                sessionData = await response.Content.ReadAsAsync<DinteroCreateSessionResponse>();
+                            }
                         }
                     }
                     catch (Exception e)
@@ -215,6 +219,52 @@ namespace Dintero.Checkout.Episerver.Helpers
                         if (response.StatusCode == HttpStatusCode.OK)
                         {
                             result = response.Content.ReadAsAsync<DinteroCaptureResponse>().Result;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        throw;
+                    }
+
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Refund transaction
+        /// </summary>
+        /// <param name="payment"></param>
+        /// <param name="purchaseOrder"></param>
+        /// <returns></returns>
+        public DinteroRefundResponse RefundTransaction(IPayment payment, IPurchaseOrder purchaseOrder)
+        {
+            DinteroRefundResponse result = null;
+
+            if (Configuration.IsValid())
+            {
+                var url = DinteroAPIUrlHelper.GetTransactionRefundUrl(payment.TransactionID);
+
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    try
+                    {
+                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
+
+                        var request = new DinteroRefundRequest
+                        {
+                            Amount = payment.Amount,
+                            Reason = "Refund", // TODO: set reason
+                            Items = new List<DinteroOrderLine>() // TODO: add order items
+                        };
+
+                        var response = client.PostAsJsonAsync(url, request).Result;
+
+                        if (response.StatusCode == HttpStatusCode.OK)
+                        {
+                            result = response.Content.ReadAsAsync<DinteroRefundResponse>().Result;
                         }
                     }
                     catch (Exception e)

@@ -5,14 +5,16 @@ using EPiServer.Logging;
 using EPiServer.ServiceLocation;
 using Mediachase.Commerce.Customers;
 using Mediachase.Commerce.Orders;
-using Mediachase.Commerce.Orders.Dto;
 using Mediachase.Commerce.Orders.Managers;
 using Mediachase.Commerce.Plugins.Payment;
 using Mediachase.Data.Provider;
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Web;
+using Mediachase.Commerce.Core.Features;
+using Mediachase.Commerce.Extensions;
 
 namespace Dintero.Checkout.Episerver
 {
@@ -20,22 +22,27 @@ namespace Dintero.Checkout.Episerver
     {
         private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroPaymentGateway));
 
-        private PaymentMethodDto _payment;
         private readonly IOrderRepository _orderRepository;
+        private readonly IFeatureSwitch _featureSwitch;
+        private readonly IInventoryProcessor _inventoryProcessor;
         private readonly DinteroRequestsHelper _requestsHelper;
 
-        public DinteroPaymentGateway() : this(ServiceLocator.Current.GetInstance<IOrderRepository>())
-        {
-        }
+        public DinteroPaymentGateway() : this(ServiceLocator.Current.GetInstance<IFeatureSwitch>(),
+            ServiceLocator.Current.GetInstance<IInventoryProcessor>(),
+            ServiceLocator.Current.GetInstance<IOrderRepository>()) { }
 
-        public DinteroPaymentGateway(IOrderRepository orderRepository)
+        public DinteroPaymentGateway(IFeatureSwitch featureSwitch, IInventoryProcessor inventoryProcessor,
+            IOrderRepository orderRepository)
         {
+            _featureSwitch = featureSwitch;
+            _inventoryProcessor = inventoryProcessor;
             _orderRepository = orderRepository;
             _requestsHelper = new DinteroRequestsHelper();
         }
 
         public override bool ProcessPayment(Payment payment, ref string message)
         {
+            Logger.Debug("Starting Dintero process payment.");
             var orderGroup = payment.Parent.Parent;
 
             var paymentProcessingResult = ProcessPayment(orderGroup, payment);
@@ -44,6 +51,7 @@ namespace Dintero.Checkout.Episerver
             {
                 HttpContext.Current.Response.Redirect(paymentProcessingResult.RedirectUrl);
             }
+
             message = paymentProcessingResult.Message;
             return paymentProcessingResult.IsSuccessful;
         }
@@ -68,11 +76,11 @@ namespace Dintero.Checkout.Episerver
             var orderForm = orderGroup.Forms.FirstOrDefault(f => f.Payments.Contains(payment));
             if (orderForm == null)
             {
-                return PaymentProcessingResult.CreateUnsuccessfulResult("There is no order form assosiated with payment.");
+                return PaymentProcessingResult.CreateUnsuccessfulResult(
+                    "There is no order form associated with payment.");
             }
 
-            var purchaseOrder = orderGroup as IPurchaseOrder;
-            if (purchaseOrder != null)
+            if (orderGroup is IPurchaseOrder purchaseOrder)
             {
                 if (payment.TransactionType == TransactionType.Capture.ToString())
                 {
@@ -86,25 +94,42 @@ namespace Dintero.Checkout.Episerver
                     }
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
-                        $@"There was an error while capturing payment with Dintero.
-                        code: {result.Error.Code}
-                        declineReason: {result.Error.Message}");
+                        $@"There was an error while capturing payment with Dintero:
+                           code: {result.Error.Code};
+                           declineReason: {result.Error.Message}");
                 }
 
                 if (payment.TransactionType == TransactionType.Credit.ToString())
                 {
-                    // TODO: add refund logic
+                    var transactionId = payment.TransactionID;
+                    if (string.IsNullOrEmpty(transactionId) || transactionId.Equals("0"))
+                    {
+                        return PaymentProcessingResult.CreateUnsuccessfulResult(
+                            "TransactionID is not valid or the current payment method does not support this order type.");
+                    }
+                    // The transact must be captured before refunding
+                    var result = _requestsHelper.RefundTransaction(payment, purchaseOrder);
+                    if (result.Error == null)
+                    {
+                        return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
+                    }
+
+                    return PaymentProcessingResult.CreateUnsuccessfulResult(
+                        $@"There was an error while refunding payment with Dintero:
+                           code: {result.Error.Code};
+                           declineReason: {result.Error.Message}");
                 }
 
                 // right now we do not support processing the order which is created by Commerce Manager
-                return PaymentProcessingResult.CreateUnsuccessfulResult("The current payment method does not support this order type.");
+                return PaymentProcessingResult.CreateUnsuccessfulResult(
+                    "The current payment method does not support this order type.");
             }
 
-            var cart = orderGroup as ICart;
-            if (cart != null && cart.OrderStatus == OrderStatus.Completed)
+            if (orderGroup is ICart cart && cart.OrderStatus == OrderStatus.Completed)
             {
                 return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
             }
+
             _orderRepository.Save(orderGroup);
 
             var redirectUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage");
@@ -120,6 +145,12 @@ namespace Dintero.Checkout.Episerver
         // <returns>The url redirection after process.</returns>
         public string ProcessUnsuccessfulTransaction(string cancelUrl, string errorMessage)
         {
+            if (HttpContext.Current == null)
+            {
+                return cancelUrl;
+            }
+
+            Logger.Error($"Dintero transaction failed [{errorMessage}].");
             return UriUtil.AddQueryString(cancelUrl, "message", errorMessage);
         }
 
@@ -129,12 +160,13 @@ namespace Dintero.Checkout.Episerver
         /// </summary>
         /// <param name="cart">The cart that was processed.</param>
         /// <param name="payment">The order payment.</param>
-        /// <param name="transactionID">The transaction id.</param>
+        /// <param name="transactionId">The transaction id.</param>
         /// <param name="orderNumber">The order number.</param>
         /// <param name="acceptUrl">The redirect url when finished.</param>
         /// <param name="cancelUrl">The redirect url when error happens.</param>
         /// <returns>The redirection url after processing.</returns>
-        public string ProcessSuccessfulTransaction(ICart cart, IPayment payment, string transactionId, string orderNumber, string acceptUrl, string cancelUrl)
+        public string ProcessSuccessfulTransaction(ICart cart, IPayment payment, string transactionId,
+            string orderNumber, string acceptUrl, string cancelUrl)
         {
             if (cart == null)
             {
@@ -154,7 +186,8 @@ namespace Dintero.Checkout.Episerver
 
                 if (!cartCompleted)
                 {
-                    return UriUtil.AddQueryString(cancelUrl, "message", string.Join(";", errorMessages.Distinct().ToArray()));
+                    return UriUtil.AddQueryString(cancelUrl, "message",
+                        string.Join(";", errorMessages.Distinct().ToArray()));
                 }
 
                 // Save the transact from Dintero to payment.
@@ -162,8 +195,7 @@ namespace Dintero.Checkout.Episerver
 
                 var purchaseOrder = MakePurchaseOrder(cart, orderNumber);
 
-                // TODO: add query parameters to redirect url to acceptUrl
-                redirectionUrl = acceptUrl;
+                redirectionUrl = UpdateAcceptUrl(purchaseOrder, payment, acceptUrl);
 
                 // Commit changes
                 scope.Complete();
@@ -174,35 +206,22 @@ namespace Dintero.Checkout.Episerver
 
         private IPurchaseOrder MakePurchaseOrder(ICart cart, string orderNumber)
         {
-            // Save changes
-            //this might cause problem when checkout using multiple shipping address because ECF workflow does not handle it. Modify the workflow instead of modify in this payment
             var purchaseOrderLink = _orderRepository.SaveAsPurchaseOrder(cart);
             var purchaseOrder = _orderRepository.Load<IPurchaseOrder>(purchaseOrderLink.OrderGroupId);
 
-            UpdateOrder(purchaseOrder, orderNumber);
+            _orderRepository.Delete(cart.OrderLink);
+
+            purchaseOrder.OrderStatus = OrderStatus.InProgress;
+            purchaseOrder.OrderNumber = orderNumber;
 
             UpdateLastOrderOfCurrentContact(CustomerContext.Current.CurrentContact, purchaseOrder.Created);
 
             _orderRepository.Save(purchaseOrder);
 
-            // Remove old cart
-            _orderRepository.Delete(cart.OrderLink);
-
             return purchaseOrder;
         }
 
-        private void UpdateOrder(IPurchaseOrder purchaseOrder, string orderNumber)
-        {
-            purchaseOrder.OrderStatus = OrderStatus.InProgress;
-            purchaseOrder.OrderNumber = orderNumber;
-        }
-
-        /// <summary>
-        /// Update last order time stamp which current user completed.
-        /// </summary>
-        /// <param name="contact">The customer contact.</param>
-        /// <param name="datetime">The order time.</param>
-        private void UpdateLastOrderOfCurrentContact(CustomerContact contact, DateTime datetime)
+        private static void UpdateLastOrderOfCurrentContact(CustomerContact contact, DateTime datetime)
         {
             if (contact != null)
             {
@@ -211,21 +230,69 @@ namespace Dintero.Checkout.Episerver
             }
         }
 
-        /// <summary>
-        /// Validates and completes a cart.
-        /// </summary>
-        /// <param name="cart">The cart.</param>
-        /// <param name="errorMessages">The error messages.</param>
         private bool DoCompletingCart(ICart cart, IList<string> errorMessages)
         {
             var isSuccess = true;
 
-            // TODO: run cart workflow
+            if (_featureSwitch.IsSerializedCartsEnabled())
+            {
+                var validationIssues = new Dictionary<ILineItem, IList<ValidationIssue>>();
+                cart.AdjustInventoryOrRemoveLineItems((item, issue) => AddValidationIssues(validationIssues, item, issue), _inventoryProcessor);
 
-            var isIgnoreProcessPayment = new Dictionary<string, object> { { "PreventProcessPayment", true } };
-            var workflowResults = OrderGroupWorkflowManager.RunWorkflow((OrderGroup)cart, OrderGroupWorkflowManager.CartCheckOutWorkflowName, true, isIgnoreProcessPayment);
+                isSuccess = !validationIssues.Any();
+
+                foreach (var issue in validationIssues.Values.SelectMany(x => x).Distinct())
+                {
+                    if (issue == ValidationIssue.RemovedDueToInsufficientQuantityInInventory)
+                    {
+                        errorMessages.Add("Not enough in stock.");
+                    }
+                    else
+                    {
+                        errorMessages.Add("Cart validation failure.");
+                    }
+                }
+
+                return isSuccess;
+            }
+
+            var isIgnoreProcessPayment = new Dictionary<string, object> {{"PreventProcessPayment", true}};
+            var workflowResults = OrderGroupWorkflowManager.RunWorkflow((OrderGroup) cart,
+                OrderGroupWorkflowManager.CartCheckOutWorkflowName, true, isIgnoreProcessPayment);
+
+            if (workflowResults.OutputParameters["Warnings"] is StringDictionary warnings)
+            {
+                isSuccess = warnings.Count == 0;
+
+                foreach (string message in warnings.Values)
+                {
+                    errorMessages.Add(message);
+                }
+            }
 
             return isSuccess;
+        }
+
+        private static void AddValidationIssues(IDictionary<ILineItem, IList<ValidationIssue>> issues, ILineItem lineItem, ValidationIssue issue)
+        {
+            if (!issues.ContainsKey(lineItem))
+            {
+                issues.Add(lineItem, new List<ValidationIssue>());
+            }
+
+            if (!issues[lineItem].Contains(issue))
+            {
+                issues[lineItem].Add(issue);
+            }
+        }
+
+        private string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, IPayment payment, string acceptUrl)
+        {
+            var redirectionUrl = UriUtil.AddQueryString(acceptUrl, "success", "true");
+            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "contactId", purchaseOrder.CustomerId.ToString());
+            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "orderNumber", purchaseOrder.OrderLink.OrderGroupId.ToString());
+            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "email", payment.BillingAddress.Email);
+            return redirectionUrl;
         }
     }
 }

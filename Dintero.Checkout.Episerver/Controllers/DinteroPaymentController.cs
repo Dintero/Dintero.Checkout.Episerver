@@ -10,6 +10,7 @@ using Mediachase.Commerce.Orders;
 using Mediachase.Commerce.Orders.Exceptions;
 using Mediachase.Commerce.Security;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
@@ -23,9 +24,8 @@ namespace Dintero.Checkout.Episerver.Controllers
         private readonly IOrderRepository _orderRepository;
         private readonly DinteroRequestsHelper _requestsHelper;
 
-        public DinteroPaymentController() : this(ServiceLocator.Current.GetInstance<IOrderRepository>(), new DinteroRequestsHelper())
-        {
-        }
+        public DinteroPaymentController() : this(ServiceLocator.Current.GetInstance<IOrderRepository>(),
+            new DinteroRequestsHelper()) { }
 
         public DinteroPaymentController(IOrderRepository orderRepository, DinteroRequestsHelper requestsHelper)
         {
@@ -40,13 +40,15 @@ namespace Dintero.Checkout.Episerver.Controllers
                 return new EmptyResult();
             }
 
-            var currentCart = _orderRepository.LoadCart<ICart>(PrincipalInfo.CurrentPrincipal.GetContactId(), Cart.DefaultName);
+            var currentCart =
+                _orderRepository.LoadCart<ICart>(PrincipalInfo.CurrentPrincipal.GetContactId(), Cart.DefaultName);
             if (!currentCart.Forms.Any() || !currentCart.GetFirstForm().Payments.Any())
             {
                 throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Exception");
             }
 
-            var payment = currentCart.Forms.SelectMany(f => f.Payments).FirstOrDefault(c => c.PaymentMethodId.Equals(_requestsHelper.Configuration.PaymentMethodId));
+            var payment = currentCart.Forms.SelectMany(f => f.Payments).FirstOrDefault(c =>
+                c.PaymentMethodId.Equals(_requestsHelper.Configuration.PaymentMethodId));
             if (payment == null)
             {
                 throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Payment was not specified");
@@ -65,18 +67,20 @@ namespace Dintero.Checkout.Episerver.Controllers
             }
             else
             {
-                var cancelUrl = UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage"); // get link to Checkout page
+                var cancelUrl =
+                    UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage"); // get link to Checkout page
                 cancelUrl = UriUtil.AddQueryString(cancelUrl, "success", "false");
-                cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentmethod", "dintero");
+                cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
                 var gateway = new DinteroPaymentGateway();
 
                 var redirectUrl = cancelUrl;
 
-                if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) && !string.IsNullOrWhiteSpace(merchant_reference))
+                if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) &&
+                    !string.IsNullOrWhiteSpace(merchant_reference))
                 {
                     var acceptUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentLandingPage");
-                    redirectUrl = gateway.ProcessSuccessfulTransaction
-                        (currentCart, payment, transaction_id, merchant_reference, acceptUrl, cancelUrl);
+                    redirectUrl = gateway.ProcessSuccessfulTransaction(currentCart, payment, transaction_id,
+                        merchant_reference, acceptUrl, cancelUrl);
                 }
                 else
                 {
