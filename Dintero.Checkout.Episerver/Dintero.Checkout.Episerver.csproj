@@ -233,6 +233,8 @@
     <Compile Include="CommerceManager\ConfigurePayment.ascx.designer.cs">
       <DependentUpon>ConfigurePayment.ascx.cs</DependentUpon>
     </Compile>
+    <Compile Include="DinteroPaymentOption.cs" />
+    <Compile Include="Helpers\CurrencyHelper.cs" />
     <Compile Include="Helpers\DinteroAPIUrlHelper.cs" />
     <Compile Include="Helpers\DinteroConfiguration.cs" />
     <Compile Include="Helpers\DinteroConstants.cs" />

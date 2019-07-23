@@ -30,7 +30,7 @@ namespace Dintero.Checkout.Episerver.Controllers
             _requestsHelper = requestsHelper;
         }
 
-        public async Task<ActionResult> Index(string error, string transaction_id, string merchant_reference)
+        public ActionResult Index(string error, string transaction_id, string merchant_reference)
         {
             if (PageEditing.PageIsInEditMode)
             {
@@ -46,6 +46,7 @@ namespace Dintero.Checkout.Episerver.Controllers
 
             var payment = currentCart.Forms.SelectMany(f => f.Payments).FirstOrDefault(c =>
                 c.PaymentMethodId.Equals(_requestsHelper.Configuration.PaymentMethodId));
+
             if (payment == null)
             {
                 throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Payment was not specified");
@@ -53,28 +54,38 @@ namespace Dintero.Checkout.Episerver.Controllers
 
             InitializeResponse();
 
+            var cancelUrl = UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage");
+            cancelUrl = UriUtil.AddQueryString(cancelUrl, "success", "false");
+
             if (string.IsNullOrWhiteSpace(transaction_id) && string.IsNullOrWhiteSpace(error))
             {
-                var sessionData = await _requestsHelper.CreateTransaction(payment, currentCart);
+                var sessionData = _requestsHelper.CreateTransaction(payment, currentCart);
 
                 if (sessionData != null)
                 {
                     return Redirect(sessionData.CheckoutUrl);
                 }
+                else
+                {
+                    return Redirect(cancelUrl);
+                }
             }
             else
             {
-                var cancelUrl =
-                    UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage");
-                cancelUrl = UriUtil.AddQueryString(cancelUrl, "success", "false");
-                cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
                 var gateway = new DinteroPaymentGateway();
+
+                cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
 
                 string redirectUrl;
 
                 if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) &&
                     !string.IsNullOrWhiteSpace(merchant_reference))
                 {
+                    // TODO: temporary work around:
+                    // (get rid as soon as DinteroPaymentOption is fixed)
+                    payment.TransactionID = transaction_id;
+                    payment.TransactionType = TransactionType.Authorization.ToString();
+
                     var acceptUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentLandingPage");
                     redirectUrl = gateway.ProcessSuccessfulTransaction(currentCart, payment, transaction_id,
                         merchant_reference, acceptUrl, cancelUrl);
@@ -87,8 +98,6 @@ namespace Dintero.Checkout.Episerver.Controllers
 
                 return Redirect(redirectUrl);
             }
-
-            return new EmptyResult();
         }
 
         private void InitializeResponse()

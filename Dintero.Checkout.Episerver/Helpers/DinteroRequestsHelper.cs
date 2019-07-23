@@ -3,29 +3,26 @@ using EPiServer.Commerce.Order;
 using EPiServer.ServiceLocation;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
-using System.Threading.Tasks;
+using EPiServer.Logging;
+using Newtonsoft.Json;
 
 namespace Dintero.Checkout.Episerver.Helpers
 {
     public class DinteroRequestsHelper
     {
+        private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroRequestsHelper));
         private readonly IOrderNumberGenerator _orderNumberGenerator;
 
         public DinteroConfiguration Configuration { get; }
 
-        public DinteroRequestsHelper() : this(new DinteroConfiguration())
-        {
-        }
+        public DinteroRequestsHelper() : this(new DinteroConfiguration()) { }
 
-        public DinteroRequestsHelper(DinteroConfiguration configuration)
-            : this(ServiceLocator.Current.GetInstance<IOrderNumberGenerator>(), configuration)
-        {
-        }
+        public DinteroRequestsHelper(DinteroConfiguration configuration) : this(
+            ServiceLocator.Current.GetInstance<IOrderNumberGenerator>(), configuration) { }
 
         public DinteroRequestsHelper(IOrderNumberGenerator orderNumberGenerator, DinteroConfiguration configuration)
         {
@@ -34,62 +31,54 @@ namespace Dintero.Checkout.Episerver.Helpers
         }
 
         /// <summary>
-        /// Authorise and create Dintero session transaction
+        /// Authorize and create Dintero session transaction
         /// </summary>
         /// <param name="payment"></param>
         /// <param name="currentCart"></param>
         /// <returns></returns>
-        public async Task<DinteroCreateSessionResponse> CreateTransaction(IPayment payment, ICart currentCart)
+        public DinteroCreateSessionResponse CreateTransaction(IPayment payment, ICart currentCart)
         {
-            DinteroCreateSessionResponse sessionData = null;
-
-            var token = await GetAccessToken();
-
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                sessionData = await CreateCheckoutSession(payment, currentCart, token);
-            }
-
-            return sessionData;
+            return SendAuthorizedRequest(token => CreateCheckoutSession(payment, currentCart, token));
         }
 
         /// <summary>
         /// Retrieve access token and create a transaction with the order details
         /// </summary>
         /// <returns></returns>
-        public async Task<string> GetAccessToken()
+        public string GetAccessToken()
         {
             string token = null;
 
-            if (Configuration.IsValid())
+            if (!Configuration.IsValid())
             {
-                var url = DinteroAPIUrlHelper.GetAuthUrl(Configuration.AccountId);
+                throw new Exception("Dintero configuration is not valid!");
+            }
 
-                if (!string.IsNullOrWhiteSpace(url))
+            var url = DinteroAPIUrlHelper.GetAuthUrl(Configuration.AccountId);
+
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                try
                 {
-                    try
-                    {
-                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
-
-                        var response = await client.PostAsJsonAsync(url, new
+                    var response = SendRequest<DinteroAuthResponse>(url, "Basic",
+                        $"{Configuration.ClientId}:{Configuration.ClientSecretId}",
+                        new
                         {
                             grant_type = "client_credentials",
                             audience = DinteroAPIUrlHelper.GetAccountUrl(Configuration.AccountId)
                         });
 
-                        if (response.StatusCode == HttpStatusCode.OK)
-                        {
-                            var responseObj = await response.Content.ReadAsAsync<DinteroAuthResponse>();
-                            token = responseObj.AccessToken;
-                        }
-                    }
-                    catch (Exception e)
+                    if (response != null)
                     {
-                        Console.WriteLine(e);
-                        throw;
+                        token = response.AccessToken;
                     }
-                    
                 }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during requesting access token.", e);
+                    throw;
+                }
+
             }
 
             return token;
@@ -102,7 +91,7 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <param name="currentCart"></param>
         /// <param name="accessToken"></param>
         /// <returns></returns>
-        public async Task<DinteroCreateSessionResponse> CreateCheckoutSession(IPayment payment, ICart currentCart,
+        public DinteroCreateSessionResponse CreateCheckoutSession(IPayment payment, ICart currentCart,
             string accessToken)
         {
             DinteroCreateSessionResponse sessionData = null;
@@ -111,77 +100,84 @@ namespace Dintero.Checkout.Episerver.Helpers
             {
                 var url = DinteroAPIUrlHelper.GetNewSessionUrl();
 
-                if (!string.IsNullOrWhiteSpace(url))
+                if (!Configuration.IsValid())
                 {
-                    try
+                    throw new Exception("Dintero configuration is not valid!");
+                }
+
+                try
+                {
+                    var orderForm = currentCart.Forms.FirstOrDefault(f => f.Payments.Contains(payment));
+
+                    if (orderForm != null)
                     {
-                        var orderForm = currentCart.Forms.FirstOrDefault(f => f.Payments.Contains(payment));
+                        var shippingAddress = orderForm.Shipments.First().ShippingAddress;
 
-                        if (orderForm != null)
+                        var orderNumber = _orderNumberGenerator.GenerateOrderNumber(currentCart);
+
+                        var request = new DinteroCreateSessionRequest
                         {
-                            var shippingAddress = orderForm.Shipments.First().ShippingAddress;
-
-                            var client = GetHttpClient("Bearer", accessToken);
-
-                            var orderNumber = _orderNumberGenerator.GenerateOrderNumber(currentCart);
-
-                            var request = new DinteroCreateSessionRequest
+                            UrlSetting =
+                                new DinteroUrlSetting
+                                {
+                                    ReturnUrl =
+                                        UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true),
+                                    CallbackUrl =
+                                        UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true)
+                                },
+                            Customer = new DinteroCustomer
                             {
-                                UrlSetting = new DinteroUrlSetting
-                                {
-                                    ReturnUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true),
-                                    CallbackUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentPage", true)
-                                },
-                                Customer = new DinteroCustomer
-                                {
-                                    Email = payment.BillingAddress.Email,
-                                    PhoneNumber = payment.BillingAddress.DaytimePhoneNumber
-                                },
-                                Order = new DinteroOrder
-                                {
-                                    Amount = payment.Amount,
-                                    VatAmount = payment.Amount, // TODO: resolve VAT,
-                                    Currency = currentCart.Currency.CurrencyCode,
-                                    MerchantReference = orderNumber,
-                                    BillingAddress = new DinteroAddress
+                                Email = payment.BillingAddress.Email,
+                                PhoneNumber = payment.BillingAddress.DaytimePhoneNumber
+                            },
+                            Order = new DinteroOrder
+                            {
+                                Amount =
+                                    CurrencyHelper.CurrencyToInt(payment.Amount, currentCart.Currency.CurrencyCode),
+                                VatAmount = CurrencyHelper.CurrencyToInt(payment.Amount,
+                                    currentCart.Currency.CurrencyCode), // TODO: resolve VAT,
+                                Currency = currentCart.Currency.CurrencyCode,
+                                MerchantReference = orderNumber,
+                                BillingAddress =
+                                    new DinteroAddress
                                     {
                                         FirstName = payment.BillingAddress.FirstName,
                                         LastName = payment.BillingAddress.LastName,
-                                        AddressLine = $"{payment.BillingAddress.Line1} {payment.BillingAddress.Line2}",
+                                        AddressLine =
+                                            $"{payment.BillingAddress.Line1} {payment.BillingAddress.Line2}",
                                         PostalCode = payment.BillingAddress.PostalCode,
                                         PostalPlace = payment.BillingAddress.City,
                                         Country = payment.BillingAddress.CountryCode
                                     },
-                                    ShippingAddress = new DinteroAddress
-                                    {
-                                        FirstName = shippingAddress.FirstName,
-                                        LastName = shippingAddress.LastName,
-                                        AddressLine = $"{shippingAddress.Line1} {shippingAddress.Line2}",
-                                        PostalCode = shippingAddress.PostalCode,
-                                        PostalPlace = shippingAddress.City,
-                                        Country = shippingAddress.CountryCode
-                                    },
-                                    Items = ConvertOrderLineItems(currentCart),
-                                    PartialPayment = false
+                                ShippingAddress = new DinteroAddress
+                                {
+                                    FirstName = shippingAddress.FirstName,
+                                    LastName = shippingAddress.LastName,
+                                    AddressLine = $"{shippingAddress.Line1} {shippingAddress.Line2}",
+                                    PostalCode = shippingAddress.PostalCode,
+                                    PostalPlace = shippingAddress.City,
+                                    Country = shippingAddress.CountryCode
                                 },
-                                ProfileId = Configuration.ProfileId
-                            };
+                                Items = ConvertOrderLineItems(currentCart),
+                                PartialPayment = false
+                            },
+                            ProfileId = Configuration.ProfileId
+                        };
 
-                            var response = await client.PostAsJsonAsync(url, request);
+                        var response = SendRequest<DinteroCreateSessionResponse>(url, "Bearer", accessToken, request);
 
-                            if (response.StatusCode == HttpStatusCode.OK)
-                            {
-                                sessionData = await response.Content.ReadAsAsync<DinteroCreateSessionResponse>();
-                            }
+                        if (response != null)
+                        {
+                            sessionData = response;
                         }
                     }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine(e);
-                        throw;
-                    }
-
                 }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during initializing payment session.", e);
+                    throw;
+                }
+
             }
 
             return sessionData;
@@ -195,77 +191,101 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <returns></returns>
         public DinteroCaptureResponse CaptureTransaction(IPayment payment, IPurchaseOrder purchaseOrder)
         {
+            return SendAuthorizedRequest(token => CaptureTransaction(payment, purchaseOrder, token));
+        }
+
+        /// <summary>
+        /// Capture transaction
+        /// </summary>
+        /// <param name="payment"></param>
+        /// <param name="purchaseOrder"></param>
+        /// <param name="accessToken"></param>
+        /// <returns></returns>
+        public DinteroCaptureResponse CaptureTransaction(IPayment payment, IPurchaseOrder purchaseOrder,
+            string accessToken)
+        {
             DinteroCaptureResponse result = null;
 
-            if (Configuration.IsValid())
+            if (!Configuration.IsValid())
             {
-                var url = DinteroAPIUrlHelper.GetTransactionCaptureUrl(payment.TransactionID);
+                throw new Exception("Dintero configuration is not valid!");
+            }
 
-                if (!string.IsNullOrWhiteSpace(url))
+            var url = DinteroAPIUrlHelper.GetTransactionCaptureUrl(payment.TransactionID);
+
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                try
                 {
-                    try
+                    var request = new DinteroCaptureRequest
                     {
-                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
+                        Amount = CurrencyHelper.CurrencyToInt(payment.Amount, purchaseOrder.Currency.CurrencyCode),
+                        CaptureReference = purchaseOrder.OrderNumber,
+                        Items = ConvertOrderLineItems(purchaseOrder)
+                    };
 
-                        var request = new DinteroCaptureRequest
-                        {
-                            Amount = payment.Amount,
-                            CaptureReference = purchaseOrder.OrderNumber,
-                            Items = new List<DinteroOrderLine>() // TODO: add order items
-                        };
+                    var response = SendRequest<DinteroCaptureResponse>(url, "Bearer", accessToken, request);
 
-                        var response = client.PostAsJsonAsync(url, request).Result;
-
-                        if (response.StatusCode == HttpStatusCode.OK)
-                        {
-                            result = response.Content.ReadAsAsync<DinteroCaptureResponse>().Result;
-                        }
-                    }
-                    catch (Exception e)
+                    if (response != null)
                     {
-                        Console.WriteLine(e);
-                        throw;
+                        result = response;
                     }
-
                 }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during capturing transaction.", e);
+                    throw;
+                }
+
             }
 
             return result;
         }
 
         /// <summary>
-        /// Void transaction
+        /// Capture transaction
         /// </summary>
         /// <param name="payment"></param>
         /// <returns></returns>
         public DinteroVoidResponse VoidTransaction(IPayment payment)
         {
+            return SendAuthorizedRequest(token => VoidTransaction(payment, token));
+        }
+
+        /// <summary>
+        /// Void transaction
+        /// </summary>
+        /// <param name="payment"></param>
+        /// <param name="accessToken"></param>
+        /// <returns></returns>
+        public DinteroVoidResponse VoidTransaction(IPayment payment, string accessToken)
+        {
             DinteroVoidResponse result = null;
 
-            if (Configuration.IsValid())
+            if (!Configuration.IsValid())
             {
-                var url = DinteroAPIUrlHelper.GetTransactionVoidUrl(payment.TransactionID);
+                throw new Exception("Dintero configuration is not valid!");
+            }
 
-                if (!string.IsNullOrWhiteSpace(url))
+            var url = DinteroAPIUrlHelper.GetTransactionVoidUrl(payment.TransactionID);
+
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                try
                 {
-                    try
+                    var response = SendRequest<DinteroVoidResponse>(url, "Bearer", accessToken, null);
+
+                    if (response != null)
                     {
-                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
-
-                        var response = client.PostAsync(url, null).Result;
-
-                        if (response.StatusCode == HttpStatusCode.OK)
-                        {
-                            result = response.Content.ReadAsAsync<DinteroVoidResponse>().Result;
-                        }
+                        result = response;
                     }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine(e);
-                        throw;
-                    }
-
                 }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during voiding transaction.", e);
+                    throw;
+                }
+
             }
 
             return result;
@@ -279,74 +299,121 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <returns></returns>
         public DinteroRefundResponse RefundTransaction(IPayment payment, IPurchaseOrder purchaseOrder)
         {
+            return SendAuthorizedRequest(token => RefundTransaction(payment, purchaseOrder, token));
+        }
+
+        /// <summary>
+        /// Refund transaction
+        /// </summary>
+        /// <param name="payment"></param>
+        /// <param name="purchaseOrder"></param>
+        /// <param name="accessToken"></param>
+        /// <returns></returns>
+        public DinteroRefundResponse RefundTransaction(IPayment payment, IPurchaseOrder purchaseOrder,
+            string accessToken)
+        {
             DinteroRefundResponse result = null;
 
-            if (Configuration.IsValid())
+            if (!Configuration.IsValid())
             {
-                var url = DinteroAPIUrlHelper.GetTransactionRefundUrl(payment.TransactionID);
+                throw new Exception("Dintero configuration is not valid!");
+            }
 
-                if (!string.IsNullOrWhiteSpace(url))
+            var url = DinteroAPIUrlHelper.GetTransactionRefundUrl(payment.TransactionID);
+
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                try
                 {
-                    try
+                    var request = new DinteroRefundRequest
                     {
-                        var client = GetHttpClient("Basic", $"{Configuration.ClientId}:{Configuration.ClientSecretId}");
+                        Amount = CurrencyHelper.CurrencyToInt(payment.Amount, purchaseOrder.Currency.CurrencyCode),
+                        Reason = "Refund", // TODO: set reason,
+                        Items = ConvertOrderLineItems(purchaseOrder)
+                    };
 
-                        var request = new DinteroRefundRequest
-                        {
-                            Amount = payment.Amount,
-                            Reason = "Refund", // TODO: set reason
-                            Items = new List<DinteroOrderLine>() // TODO: add order items
-                        };
+                    var response = SendRequest<DinteroRefundResponse>(url, "Bearer", accessToken, request);
 
-                        var response = client.PostAsJsonAsync(url, request).Result;
-
-                        if (response.StatusCode == HttpStatusCode.OK)
-                        {
-                            result = response.Content.ReadAsAsync<DinteroRefundResponse>().Result;
-                        }
-                    }
-                    catch (Exception e)
+                    if (response != null)
                     {
-                        Console.WriteLine(e);
-                        throw;
+                        result = response;
                     }
-
                 }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during refunding transaction.", e);
+                    throw;
+                }
+
             }
 
             return result;
         }
 
-        /// <summary>
-        /// Create an instance of HttpClient
-        /// </summary>
-        /// <param name="tokenType"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        private static HttpClient GetHttpClient(string tokenType, string token)
+        private T SendAuthorizedRequest<T>(Func<string, T> func)
         {
-            var client = new HttpClient();
+            var result = default(T);
+
+            var token = GetAccessToken();
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                result = func(token);
+            }
+
+            return result;
+        }
+
+        private static T SendRequest<T>(string url, string tokenType, string token, object data)
+        {
+            var http = (HttpWebRequest) WebRequest.Create(new Uri(url));
+            http.Accept = "application/json";
+            http.ContentType = "application/json";
+            http.Method = "POST";
+
+            var authorizationHeader = string.Empty;
 
             if (tokenType == "Basic")
             {
-                var byteArray = Encoding.ASCII.GetBytes(token);
-                client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
-
-            } else if (tokenType == "Bearer")
+                authorizationHeader = $"Basic {Convert.ToBase64String(Encoding.ASCII.GetBytes($"{token}"))}";
+            }
+            else if (tokenType == "Bearer")
             {
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                authorizationHeader = $"Bearer {token}";
             }
 
-            return client;
+            http.Headers.Add("Authorization", authorizationHeader);
+
+            var encoding = new ASCIIEncoding();
+            var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
+
+            using (var newStream = http.GetRequestStream())
+            {
+                var result = default(T);
+
+                newStream.Write(bytes, 0, bytes.Length);
+                newStream.Close();
+
+                var response = http.GetResponse();
+                using (var stream = response.GetResponseStream())
+                {
+                    if (stream != null)
+                    {
+                        var sr = new StreamReader(stream);
+                        var content = sr.ReadToEnd();
+
+                        result = JsonConvert.DeserializeObject<T>(content);
+                    }
+                }
+
+                return result;
+            }
         }
 
-        private List<DinteroOrderLine> ConvertOrderLineItems(ICart currentCart)
+        private static List<DinteroOrderLine> ConvertOrderLineItems(IOrderGroup currentCart)
         {
             var items = new List<DinteroOrderLine>();
 
-            foreach (var item in currentCart.GetAllLineItems()
-                .Select((value, i) => new { Index = i, Value = value }))
+            foreach (var item in currentCart.GetAllLineItems().Select((value, i) => new {Index = i, Value = value}))
             {
                 items.Add(new DinteroOrderLine
                 {
@@ -355,7 +422,8 @@ namespace Dintero.Checkout.Episerver.Helpers
                     LineId = item.Index.ToString(),
                     Description = item.Value.DisplayName,
                     Quantity = item.Value.Quantity,
-                    Amount = item.Value.GetExtendedPrice(currentCart.Currency).Amount, // TODO: fill property
+                    Amount = CurrencyHelper.CurrencyToInt(item.Value.GetExtendedPrice(currentCart.Currency).Amount,
+                        currentCart.Currency.CurrencyCode),
                     VatAmount = 50, // TODO: fill property
                     Vat = 20 // TODO: fill property
                 });
