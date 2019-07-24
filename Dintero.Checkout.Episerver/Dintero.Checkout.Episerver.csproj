@@ -259,6 +259,7 @@
     <Compile Include="Models\DinteroTransactionUrlSetting.cs" />
     <Compile Include="Models\DinteroUrlSetting.cs" />
     <Compile Include="Models\PaymentProcessingResult.cs" />
+    <Compile Include="Models\TransactionResult.cs" />
     <Compile Include="PageTypes\DinteroPage.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

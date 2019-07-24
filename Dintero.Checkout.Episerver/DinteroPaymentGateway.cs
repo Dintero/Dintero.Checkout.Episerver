@@ -88,29 +88,37 @@ namespace Dintero.Checkout.Episerver
                     // actual capturing must be done on Dintero.
 
                     var result = _requestsHelper.CaptureTransaction(payment, purchaseOrder);
-                    if (result.Error == null)
+                    if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
                         $@"There was an error while capturing payment with Dintero:
-                           code: {result.Error.Code};
-                           declineReason: {result.Error.Message}");
+                           code: {
+                                result.ErrorCode
+                            };
+                           declineReason: {
+                                result.Error
+                            }");
                 }
 
                 if (payment.TransactionType == TransactionType.Void.ToString())
                 {
                     var result = _requestsHelper.VoidTransaction(payment);
-                    if (result.Error == null)
+                    if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
                         $@"There was an error while voiding payment with Dintero:
-                           code: {result.Error.Code};
-                           declineReason: {result.Error.Message}");
+                           code: {
+                                result.ErrorCode
+                            };
+                           declineReason: {
+                                result.Error
+                            }");
                 }
 
                 if (payment.TransactionType == TransactionType.Credit.ToString())
@@ -121,17 +129,22 @@ namespace Dintero.Checkout.Episerver
                         return PaymentProcessingResult.CreateUnsuccessfulResult(
                             "TransactionID is not valid or the current payment method does not support this order type.");
                     }
+
                     // The transact must be captured before refunding
                     var result = _requestsHelper.RefundTransaction(payment, purchaseOrder);
-                    if (result.Error == null)
+                    if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
                         $@"There was an error while refunding payment with Dintero:
-                           code: {result.Error.Code};
-                           declineReason: {result.Error.Message}");
+                           code: {
+                                result.ErrorCode
+                            };
+                           declineReason: {
+                                result.Error
+                            }");
                 }
 
                 // right now we do not support processing the order which is created by Commerce Manager
@@ -251,7 +264,8 @@ namespace Dintero.Checkout.Episerver
             if (_featureSwitch.IsSerializedCartsEnabled())
             {
                 var validationIssues = new Dictionary<ILineItem, IList<ValidationIssue>>();
-                cart.AdjustInventoryOrRemoveLineItems((item, issue) => AddValidationIssues(validationIssues, item, issue), _inventoryProcessor);
+                cart.AdjustInventoryOrRemoveLineItems(
+                    (item, issue) => AddValidationIssues(validationIssues, item, issue), _inventoryProcessor);
 
                 isSuccess = !validationIssues.Any();
 
@@ -287,7 +301,8 @@ namespace Dintero.Checkout.Episerver
             return isSuccess;
         }
 
-        private static void AddValidationIssues(IDictionary<ILineItem, IList<ValidationIssue>> issues, ILineItem lineItem, ValidationIssue issue)
+        private static void AddValidationIssues(IDictionary<ILineItem, IList<ValidationIssue>> issues,
+            ILineItem lineItem, ValidationIssue issue)
         {
             if (!issues.ContainsKey(lineItem))
             {
@@ -300,11 +315,11 @@ namespace Dintero.Checkout.Episerver
             }
         }
 
-        private string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, IPayment payment, string acceptUrl)
+        private static string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, IPayment payment, string acceptUrl)
         {
             var redirectionUrl = UriUtil.AddQueryString(acceptUrl, "success", "true");
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "contactId", purchaseOrder.CustomerId.ToString());
-            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "orderNumber", purchaseOrder.OrderLink.OrderGroupId.ToString());
+            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "orderNumber", purchaseOrder.OrderNumber);
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "email", payment.BillingAddress.Email);
             return redirectionUrl;
         }

@@ -7,9 +7,13 @@ namespace Dintero.Checkout.Episerver.Helpers
     {
         public static int CurrencyToInt(decimal amount, string currencyCode)
         {
+            return CurrencyToInt(Convert.ToDouble(amount), currencyCode);
+        }
+        public static int CurrencyToInt(double amount, string currencyCode)
+        {
             var culture = new CultureInfo(currencyCode);
             var precision = culture.NumberFormat.CurrencyDecimalDigits;
-            return (int)Math.Round((amount * (decimal)Math.Pow(10, precision)));
+            return (int)Math.Round((amount * Math.Pow(10, precision)));
         }
 
         private static int GetPrecision(string currencyCode)

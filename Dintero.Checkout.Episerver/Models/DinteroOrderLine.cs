@@ -26,11 +26,11 @@ namespace Dintero.Checkout.Episerver.Models
 
 
         [JsonProperty(PropertyName = "amount")]
-        public decimal Amount { get; set; }
+        public int Amount { get; set; }
 
 
         [JsonProperty(PropertyName = "vat_amount")]
-        public decimal VatAmount { get; set; }
+        public int VatAmount { get; set; }
 
 
         [JsonProperty(PropertyName = "vat")]

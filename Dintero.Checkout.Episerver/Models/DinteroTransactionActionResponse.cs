@@ -12,7 +12,7 @@ namespace Dintero.Checkout.Episerver.Models
         public string PaymentProduct { get; set; }
 
         [JsonProperty(PropertyName = "amount")]
-        public decimal Amount { get; set; }
+        public int Amount { get; set; }
 
         [JsonProperty(PropertyName = "currency")]
         public string Currency { get; set; }
