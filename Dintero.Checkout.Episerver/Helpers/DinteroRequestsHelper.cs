@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using EPiServer.Logging;
+using Mediachase.Commerce;
 using Mediachase.Commerce.Catalog;
 using Mediachase.Commerce.Catalog.Dto;
 using Mediachase.Commerce.Catalog.Managers;
@@ -164,7 +165,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                                     PostalPlace = shippingAddress.City,
                                     Country = shippingAddress.CountryCode
                                 },
-                                Items = ConvertOrderLineItems(currentCart),
+                                Items = ConvertOrderLineItems(currentCart.Forms, currentCart.Currency),
                                 PartialPayment = false
                             },
                             ProfileId = Configuration.ProfileId
@@ -226,7 +227,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                     {
                         Amount = CurrencyHelper.CurrencyToInt(payment.Amount, purchaseOrder.Currency.CurrencyCode),
                         CaptureReference = purchaseOrder.OrderNumber,
-                        Items = ConvertOrderLineItems(purchaseOrder)
+                        Items = ConvertOrderLineItems(purchaseOrder.Forms, purchaseOrder.Currency)
                     };
 
                     result = SendTransactionRequest(url, "Bearer", accessToken, request, new List<string> {"CAPTURED"});
@@ -291,21 +292,24 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// Refund transaction
         /// </summary>
         /// <param name="payment"></param>
-        /// <param name="purchaseOrder"></param>
+        /// <param name="returnForm"></param>
+        /// <param name="currency"></param>
         /// <returns></returns>
-        public TransactionResult RefundTransaction(IPayment payment, IPurchaseOrder purchaseOrder)
+        public TransactionResult RefundTransaction(IPayment payment, IOrderForm returnForm, Currency currency)
         {
-            return SendAuthorizedRequest(token => RefundTransaction(payment, purchaseOrder, token));
+            return SendAuthorizedRequest(token => RefundTransaction(payment, returnForm, currency, token));
         }
 
         /// <summary>
         /// Refund transaction
         /// </summary>
         /// <param name="payment"></param>
-        /// <param name="purchaseOrder"></param>
+        /// <param name="returnForm"></param>
+        /// <param name="currency"></param>
         /// <param name="accessToken"></param>
         /// <returns></returns>
-        public TransactionResult RefundTransaction(IPayment payment, IPurchaseOrder purchaseOrder, string accessToken)
+        public TransactionResult RefundTransaction(IPayment payment, IOrderForm returnForm, Currency currency,
+            string accessToken)
         {
             var result = new TransactionResult();
 
@@ -322,9 +326,9 @@ namespace Dintero.Checkout.Episerver.Helpers
                 {
                     var request = new DinteroRefundRequest
                     {
-                        Amount = CurrencyHelper.CurrencyToInt(payment.Amount, purchaseOrder.Currency.CurrencyCode),
+                        Amount = CurrencyHelper.CurrencyToInt(payment.Amount, currency.CurrencyCode),
                         Reason = "Refund", // TODO: set reason,
-                        Items = ConvertOrderLineItems(purchaseOrder)
+                        Items = ConvertOrderLineItems(new List<IOrderForm> {returnForm}, currency)
                     };
 
                     result = SendTransactionRequest(url, "Bearer", accessToken, request,
@@ -432,20 +436,21 @@ namespace Dintero.Checkout.Episerver.Helpers
             }
         }
 
-        private static List<DinteroOrderLine> ConvertOrderLineItems(IOrderGroup currentCart)
+        private static List<DinteroOrderLine> ConvertOrderLineItems(IEnumerable<IOrderForm> orderForms,
+            Currency currency)
         {
             var items = new List<DinteroOrderLine>();
 
             var index = 0;
 
-            foreach (var orderForm in currentCart.Forms)
+            foreach (var orderForm in orderForms)
             {
                 foreach (var s in orderForm.Shipments)
                 {
                     foreach (var item in s.LineItems.Select((value, i) => new {Index = i, Value = value}))
                     {
                         index = item.Index + 1;
-                        items.Add(TransformLineItem(currentCart, item.Value, s.ShippingAddress, index));
+                        items.Add(TransformLineItem(currency, item.Value, s.ShippingAddress, index));
                     }
 
                     index++;
@@ -458,10 +463,9 @@ namespace Dintero.Checkout.Episerver.Helpers
                         LineId = index.ToString(),
                         Description = shipment.ShippingMethodName,
                         Quantity = 1,
-                        Amount =
-                            CurrencyHelper.CurrencyToInt(shipment.ShippingTotal, currentCart.Currency.CurrencyCode),
+                        Amount = CurrencyHelper.CurrencyToInt(shipment.ShippingTotal, currency.CurrencyCode),
                         VatAmount = GetVatAmount(shipment.ShippingTotal, shipment.ShippingTax,
-                            currentCart.Currency.CurrencyCode),
+                            currency.CurrencyCode),
                         Vat = Convert.ToInt32(shipment.ShippingTax)
                     });
                 }
@@ -470,27 +474,27 @@ namespace Dintero.Checkout.Episerver.Helpers
             return items;
         }
 
-        private static DinteroOrderLine TransformLineItem(IOrderGroup currentCart, ILineItem lineItem,
+        private static DinteroOrderLine TransformLineItem(Currency currency, ILineItem lineItem,
             IOrderAddress orderAddress, int index)
         {
             var dinteroItem = new DinteroOrderLine
             {
-                Id = lineItem.LineItemId.ToString(),
+                Id = lineItem.Code,
                 Groups = new List<DinteroOrderLineGroup>(),
                 LineId = index.ToString(),
                 Description = lineItem.DisplayName,
                 Quantity = lineItem.Quantity
             };
 
-            AdjustPriceAndTaxes(currentCart, lineItem, dinteroItem, orderAddress);
+            AdjustPriceAndTaxes(currency, lineItem, dinteroItem, orderAddress);
 
             return dinteroItem;
         }
 
-        private static void AdjustPriceAndTaxes(IOrderGroup currentCart, ILineItem lineItem,
+        private static void AdjustPriceAndTaxes(Currency currency, ILineItem lineItem,
             DinteroOrderLine dinteroItem, IOrderAddress orderAddress)
         {
-            var amount = lineItem.GetExtendedPrice(currentCart.Currency).Amount;
+            var amount = lineItem.GetExtendedPrice(currency).Amount;
             double vat = 0;
 
             var entryDto = CatalogContext.Current.GetCatalogEntryDto(lineItem.Code,
@@ -514,9 +518,9 @@ namespace Dintero.Checkout.Episerver.Helpers
                 }
             }
 
-            dinteroItem.Amount = CurrencyHelper.CurrencyToInt(amount, currentCart.Currency.CurrencyCode);
+            dinteroItem.Amount = CurrencyHelper.CurrencyToInt(amount, currency.CurrencyCode);
             dinteroItem.Vat = Convert.ToInt32(vat);
-            dinteroItem.VatAmount = GetVatAmount(amount, vat, currentCart.Currency.CurrencyCode);
+            dinteroItem.VatAmount = GetVatAmount(amount, vat, currency.CurrencyCode);
         }
 
         private static int GetVatAmount(decimal amount, decimal vat, string currencyCode)

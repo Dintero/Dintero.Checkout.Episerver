@@ -13,11 +13,14 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
+using EPiServer.Logging;
 
 namespace Dintero.Checkout.Episerver.Controllers
 {
     public class DinteroPaymentController : PageController<DinteroPage>
     {
+        private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroPaymentGateway));
+
         private readonly IOrderRepository _orderRepository;
         private readonly DinteroRequestsHelper _requestsHelper;
 
@@ -32,6 +35,7 @@ namespace Dintero.Checkout.Episerver.Controllers
 
         public ActionResult Index(string error, string transaction_id, string merchant_reference)
         {
+            Logger.Debug("DinteroPaymentController started.");
             if (PageEditing.PageIsInEditMode)
             {
                 return new EmptyResult();
@@ -44,12 +48,15 @@ namespace Dintero.Checkout.Episerver.Controllers
                 throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Exception");
             }
 
+            var formPayments = currentCart.Forms.SelectMany(f => f.Payments).Select(p => p.PaymentId);
+
             var payment = currentCart.Forms.SelectMany(f => f.Payments).FirstOrDefault(c =>
                 c.PaymentMethodId.Equals(_requestsHelper.Configuration.PaymentMethodId));
 
             if (payment == null)
             {
-                throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Payment was not specified");
+                throw new PaymentException(PaymentException.ErrorType.ProviderError, "",
+                    $"Payment was not specified ({_requestsHelper.Configuration.PaymentMethodId}). Form payments: {string.Join(";", formPayments)}");
             }
 
             InitializeResponse();

@@ -123,6 +123,11 @@ namespace Dintero.Checkout.Episerver
 
                 if (payment.TransactionType == TransactionType.Credit.ToString())
                 {
+                    if (!(purchaseOrder is PurchaseOrder refundOrder))
+                    {
+                        return PaymentProcessingResult.CreateUnsuccessfulResult("Order has invalid type.");
+                    }
+
                     var transactionId = payment.TransactionID;
                     if (string.IsNullOrEmpty(transactionId) || transactionId.Equals("0"))
                     {
@@ -130,21 +135,26 @@ namespace Dintero.Checkout.Episerver
                             "TransactionID is not valid or the current payment method does not support this order type.");
                     }
 
-                    // The transact must be captured before refunding
-                    var result = _requestsHelper.RefundTransaction(payment, purchaseOrder);
+                    var returnForm = refundOrder.ReturnOrderForms.FirstOrDefault<OrderForm>((Func<OrderForm, bool>)(p =>
+                    {
+                        if (p.Status == ReturnFormStatus.AwaitingCompletion.ToString())
+                            return p.Total == payment.Amount;
+                        return false;
+                    }));
+
+                    if (returnForm == null)
+                    {
+                        return PaymentProcessingResult.CreateUnsuccessfulResult("No items found for refunding.");
+                    }
+                     
+                    var result = _requestsHelper.RefundTransaction(payment, returnForm, purchaseOrder.Currency);
                     if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
-                        $@"There was an error while refunding payment with Dintero:
-                           code: {
-                                result.ErrorCode
-                            };
-                           declineReason: {
-                                result.Error
-                            }");
+                        $@"There was an error while refunding payment with Dintero: code: { result.ErrorCode }; declineReason: { result.Error }");
                 }
 
                 // right now we do not support processing the order which is created by Commerce Manager
