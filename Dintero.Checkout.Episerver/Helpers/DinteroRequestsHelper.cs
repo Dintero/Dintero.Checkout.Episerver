@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using EPiServer.Events.Clients;
 using EPiServer.Logging;
 using Mediachase.Commerce;
 using Mediachase.Commerce.Catalog;
@@ -67,8 +68,8 @@ namespace Dintero.Checkout.Episerver.Helpers
             {
                 try
                 {
-                    var response = SendRequest<DinteroAuthResponse>(url, "Basic",
-                        $"{Configuration.ClientId}:{Configuration.ClientSecretId}",
+                    var response = SendRequest<DinteroAuthResponse>(url,
+                        $"{Configuration.ClientId}:{Configuration.ClientSecretId}", "Basic",
                         new
                         {
                             grant_type = "client_credentials",
@@ -171,7 +172,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                             ProfileId = Configuration.ProfileId
                         };
 
-                        var response = SendRequest<DinteroCreateSessionResponse>(url, "Bearer", accessToken, request);
+                        var response = SendRequest<DinteroCreateSessionResponse>(url, accessToken, "Bearer", request);
 
                         if (response != null)
                         {
@@ -188,6 +189,74 @@ namespace Dintero.Checkout.Episerver.Helpers
             }
 
             return sessionData;
+        }
+
+        /// <summary>
+        /// Retrieve transaction details
+        /// </summary>
+        /// <param name="transactionId"></param>
+        /// <param name="accessToken"></param>
+        /// <returns></returns>
+        public DinteroTransactionActionResponse GetTransactionDetails(string transactionId, string accessToken)
+        {
+            var result = new DinteroTransactionActionResponse();
+
+            if (!Configuration.IsValid())
+            {
+                throw new Exception("Dintero configuration is not valid!");
+            }
+
+            var url = DinteroAPIUrlHelper.GetTransactionDetailsUrl(transactionId);
+
+            if (!string.IsNullOrWhiteSpace(url))
+            {
+                try
+                {
+                    var response = (JObject)SendRequest<object>(url, accessToken, requestMethod: "GET");
+
+                    result.Id = response["id"]?.ToString().ToUpper();
+                    result.Currency = response["currency"]?.ToString().ToUpper();
+                    result.Status = response["status"]?.ToString().ToUpper();
+                    result.Items = response["items"]?.ToObject<List<DinteroOrderLine>>();
+                    result.Events = new List<DinteroTransactionEvent>();
+
+                    var events = response["events"];
+                    if (events != null)
+                    {
+                        foreach (var transactionEvent in events)
+                        {
+                            var eventObj = new DinteroTransactionEvent
+                            {
+                                Id = transactionEvent["id"]?.ToString(),
+                                Event = transactionEvent["event"]?.ToString().ToUpper(),
+                                Items = response["items"]?.ToObject<List<DinteroOrderLine>>(),
+                                Success = response["success"]?.ToString().ToLower() == "true"
+                            };
+
+                            if (int.TryParse(response["amount"]?.ToString(), out var eventAmount))
+                            {
+                                eventObj.Amount = eventAmount;
+                            }
+
+                            result.Events.Add(eventObj);
+                        }
+                    }
+
+                    if (int.TryParse(response["amount"]?.ToString(), out var amount))
+                    {
+                        result.Amount = amount;
+                    }
+
+                }
+                catch (Exception e)
+                {
+                    Logger.Error("An error occurred during capturing transaction.", e);
+                    throw;
+                }
+
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -295,21 +364,21 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// <param name="returnForm"></param>
         /// <param name="currency"></param>
         /// <returns></returns>
-        public TransactionResult RefundTransaction(IPayment payment, IOrderForm returnForm, Currency currency)
+        public TransactionResult RefundTransaction(IPayment payment, IEnumerable<IOrderForm> returnForms, Currency currency)
         {
-            return SendAuthorizedRequest(token => RefundTransaction(payment, returnForm, currency, token));
+            return SendAuthorizedRequest(token => RefundTransaction(payment, returnForms, currency, token));
         }
 
         /// <summary>
         /// Refund transaction
         /// </summary>
         /// <param name="payment"></param>
-        /// <param name="returnForm"></param>
+        /// <param name="returnForms"></param>
         /// <param name="currency"></param>
         /// <param name="accessToken"></param>
         /// <returns></returns>
-        public TransactionResult RefundTransaction(IPayment payment, IOrderForm returnForm, Currency currency,
-            string accessToken)
+        public TransactionResult RefundTransaction(IPayment payment, IEnumerable<IOrderForm> returnForms,
+            Currency currency, string accessToken)
         {
             var result = new TransactionResult();
 
@@ -324,12 +393,25 @@ namespace Dintero.Checkout.Episerver.Helpers
             {
                 try
                 {
+                    var transaction = GetTransactionDetails(payment.TransactionID, accessToken);
+
+                    if (transaction == null)
+                    {
+                        throw new Exception("Dintero transaction can't be loaded!");
+                    }
+
                     var request = new DinteroRefundRequest
                     {
                         Amount = CurrencyHelper.CurrencyToInt(payment.Amount, currency.CurrencyCode),
-                        Reason = "Refund", // TODO: set reason,
-                        Items = ConvertOrderLineItems(new List<IOrderForm> {returnForm}, currency)
+                        Reason = "Refund", // TODO: set reason
                     };
+
+                    var returnForm = GetCurrentReturnForm(returnForms, transaction);
+
+                    if (returnForm != null)
+                    {
+                        request.Items = ConvertRefundOrderLineItems(returnForm, transaction, currency);
+                    }
 
                     result = SendTransactionRequest(url, "Bearer", accessToken, request,
                         new List<string> {"PARTIALLY_REFUNDED", "PARTIALLY_CAPTURED_REFUNDED", "REFUNDED"});
@@ -349,7 +431,7 @@ namespace Dintero.Checkout.Episerver.Helpers
             object data, ICollection<string> successStatuses)
         {
             var result = new TransactionResult();
-            var response = (JObject) SendRequest<object>(url, tokenType, accessToken, data);
+            var response = (JObject) SendRequest<object>(url, accessToken, tokenType, data);
 
             if (response != null)
             {
@@ -390,12 +472,13 @@ namespace Dintero.Checkout.Episerver.Helpers
             return result;
         }
 
-        private static T SendRequest<T>(string url, string tokenType, string token, object data)
+        private static T SendRequest<T>(string url, string token, string tokenType = "Bearer", object data = null,
+            string requestMethod = "POST")
         {
             var http = (HttpWebRequest) WebRequest.Create(new Uri(url));
             http.Accept = "application/json";
             http.ContentType = "application/json";
-            http.Method = "POST";
+            http.Method = requestMethod;
 
             var authorizationHeader = string.Empty;
 
@@ -410,30 +493,91 @@ namespace Dintero.Checkout.Episerver.Helpers
 
             http.Headers.Add("Authorization", authorizationHeader);
 
-            var encoding = new ASCIIEncoding();
-            var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
-
-            using (var newStream = http.GetRequestStream())
+            if (data != null && requestMethod == "POST")
             {
-                var result = default(T);
+                var encoding = new ASCIIEncoding();
+                var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
 
-                newStream.Write(bytes, 0, bytes.Length);
-                newStream.Close();
-
-                var response = http.GetResponse();
-                using (var stream = response.GetResponseStream())
+                using (var newStream = http.GetRequestStream())
                 {
-                    if (stream != null)
-                    {
-                        var sr = new StreamReader(stream);
-                        var content = sr.ReadToEnd();
+                    newStream.Write(bytes, 0, bytes.Length);
+                    newStream.Close();
+                }
+            }
 
-                        result = JsonConvert.DeserializeObject<T>(content);
+            var result = default(T);
+
+            var response = http.GetResponse();
+            using (var stream = response.GetResponseStream())
+            {
+                if (stream != null)
+                {
+                    var sr = new StreamReader(stream);
+                    var content = sr.ReadToEnd();
+
+                    result = JsonConvert.DeserializeObject<T>(content);
+                }
+            }
+
+            return result;
+        }
+
+        private static IOrderForm GetCurrentReturnForm(IEnumerable<IOrderForm> returnForms,
+            DinteroTransactionActionResponse transaction)
+        {
+            IOrderForm returnForm = null;
+
+            if (returnForms != null)
+            {
+                var forms = returnForms.ToList();
+
+                if (forms.Count == 1)
+                {
+                    returnForm = forms.First();
+                }
+                else
+                {
+                    var refunds = transaction.Events.Where(e => e.Success && e.Event == "REFUND").ToList();
+
+                    foreach (var form in forms)
+                    {
+                        if (!refunds.Any(refund => HaveEqualLineItems(refund.Items, form.GetAllLineItems().ToList())))
+                        {
+                            returnForm = form;
+                            break;
+                        }
                     }
                 }
-
-                return result;
             }
+
+            return returnForm;
+        }
+
+        private static bool HaveEqualLineItems(ICollection<DinteroOrderLine> refundItems,
+            ICollection<ILineItem> formItems)
+        {
+            return refundItems.Count == formItems.Count && refundItems.All(refundItem =>
+                       formItems.Any(formItem =>
+                           formItem.Code == refundItem.Id && formItem.Quantity == refundItem.Quantity));
+        }
+
+        private static List<DinteroOrderLine> ConvertRefundOrderLineItems(IOrderForm orderForm,
+            DinteroTransactionActionResponse transaction, Currency currency)
+        {
+            // TODO: resolve address
+            var shippingAddress = orderForm.Shipments.FirstOrDefault();
+            return orderForm.GetAllLineItems().Select(lineItem => TransformLineItem(currency, lineItem,
+                shippingAddress?.ShippingAddress, ResolveLineItemDinteroId(transaction, lineItem.Code))).ToList();
+        }
+
+        private static int ResolveLineItemDinteroId(DinteroTransactionActionResponse transaction, string code)
+        {
+            var dinteroItem = transaction.Items.FirstOrDefault(item => item.Id == code);
+            if (dinteroItem != null && int.TryParse(dinteroItem.LineId, out var dinteroId))
+            {
+                return dinteroId;
+            }
+            return 0;
         }
 
         private static List<DinteroOrderLine> ConvertOrderLineItems(IEnumerable<IOrderForm> orderForms,

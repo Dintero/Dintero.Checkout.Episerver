@@ -135,19 +135,15 @@ namespace Dintero.Checkout.Episerver
                             "TransactionID is not valid or the current payment method does not support this order type.");
                     }
 
-                    var returnForm = refundOrder.ReturnOrderForms.FirstOrDefault<OrderForm>((Func<OrderForm, bool>)(p =>
-                    {
-                        if (p.Status == ReturnFormStatus.AwaitingCompletion.ToString())
-                            return p.Total == payment.Amount;
-                        return false;
-                    }));
+                    var returnForms = refundOrder.ReturnOrderForms.Where(rt =>
+                        rt.Status == ReturnFormStatus.Complete.ToString() && rt.Total == payment.Amount).ToList();
 
-                    if (returnForm == null)
+                    if (!returnForms.Any())
                     {
                         return PaymentProcessingResult.CreateUnsuccessfulResult("No items found for refunding.");
                     }
-                     
-                    var result = _requestsHelper.RefundTransaction(payment, returnForm, purchaseOrder.Currency);
+
+                    var result = _requestsHelper.RefundTransaction(payment, returnForms, purchaseOrder.Currency);
                     if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);

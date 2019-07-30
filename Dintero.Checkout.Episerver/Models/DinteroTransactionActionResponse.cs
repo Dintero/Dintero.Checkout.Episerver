@@ -42,7 +42,7 @@ namespace Dintero.Checkout.Episerver.Models
         public DinteroTransactionUrlSetting UrlSetting { get; set; }
 
         [JsonProperty(PropertyName = "events")]
-        public List<object> Events { get; set; }
+        public List<DinteroTransactionEvent> Events { get; set; }
 
         [JsonProperty(PropertyName = "session_id")]
         public string SessionId { get; set; }
