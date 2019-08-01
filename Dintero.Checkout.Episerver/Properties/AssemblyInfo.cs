@@ -6,9 +6,9 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("Dintero.Checkout.Episerver")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyDescription("Module for EPiServer Commerce for Dintero payment")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("Dintero")]
 [assembly: AssemblyProduct("Dintero.Checkout.Episerver")]
 [assembly: AssemblyCopyright("Copyright ©  2019")]
 [assembly: AssemblyTrademark("")]
