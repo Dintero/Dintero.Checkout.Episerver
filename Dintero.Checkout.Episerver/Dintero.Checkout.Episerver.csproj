@@ -223,6 +223,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Business\ModuleInitializer.cs" />
     <Compile Include="Controllers\DinteroPaymentController.cs" />
     <Compile Include="DinteroPaymentGateway.cs" />
     <Compile Include="DinteroPayment.cs" />
@@ -239,7 +240,9 @@
     <Compile Include="Helpers\DinteroConfiguration.cs" />
     <Compile Include="Helpers\DinteroConstants.cs" />
     <Compile Include="Helpers\DinteroRequestsHelper.cs" />
+    <Compile Include="Helpers\OrderHelper.cs" />
     <Compile Include="Helpers\UriUtil.cs" />
+    <Compile Include="Interfaces\IPostProcessDinteroPayment.cs" />
     <Compile Include="Models\BaseDinteroResponse.cs" />
     <Compile Include="Models\DinteroRefundRequest.cs" />
     <Compile Include="Models\DinteroCaptureRequest.cs" />

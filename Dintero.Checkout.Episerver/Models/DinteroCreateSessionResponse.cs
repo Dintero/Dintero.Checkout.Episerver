@@ -5,7 +5,7 @@ namespace Dintero.Checkout.Episerver.Models
     public class DinteroCreateSessionResponse : BaseDinteroResponse
     {
         [JsonProperty(PropertyName = "id")]
-        public string TransactionId { get; set; }
+        public string SessionId { get; set; }
 
         [JsonProperty(PropertyName = "url")]
         public string CheckoutUrl { get; set; }

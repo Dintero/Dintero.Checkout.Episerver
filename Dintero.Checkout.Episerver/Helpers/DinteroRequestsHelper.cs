@@ -8,7 +8,6 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
-using EPiServer.Events.Clients;
 using EPiServer.Logging;
 using Mediachase.Commerce;
 using Mediachase.Commerce.Catalog;
@@ -172,12 +171,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                             ProfileId = Configuration.ProfileId
                         };
 
-                        var response = SendRequest<DinteroCreateSessionResponse>(url, accessToken, "Bearer", request);
-
-                        if (response != null)
-                        {
-                            sessionData = response;
-                        }
+                        sessionData = SendRequest<DinteroCreateSessionResponse>(url, accessToken, "Bearer", request);
                     }
                 }
                 catch (Exception e)
@@ -361,7 +355,7 @@ namespace Dintero.Checkout.Episerver.Helpers
         /// Refund transaction
         /// </summary>
         /// <param name="payment"></param>
-        /// <param name="returnForm"></param>
+        /// <param name="returnForms"></param>
         /// <param name="currency"></param>
         /// <returns></returns>
         public TransactionResult RefundTransaction(IPayment payment, IEnumerable<IOrderForm> returnForms, Currency currency)

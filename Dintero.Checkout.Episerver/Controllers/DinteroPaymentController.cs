@@ -10,7 +10,7 @@ using Mediachase.Commerce.Orders.Exceptions;
 using Mediachase.Commerce.Security;
 using System;
 using System.Linq;
-using System.Threading.Tasks;
+using System.Net;
 using System.Web;
 using System.Web.Mvc;
 using EPiServer.Logging;
@@ -24,6 +24,8 @@ namespace Dintero.Checkout.Episerver.Controllers
         private readonly IOrderRepository _orderRepository;
         private readonly DinteroRequestsHelper _requestsHelper;
 
+        private static readonly object Lock = new object();
+
         public DinteroPaymentController() : this(ServiceLocator.Current.GetInstance<IOrderRepository>(),
             new DinteroRequestsHelper()) { }
 
@@ -33,19 +35,37 @@ namespace Dintero.Checkout.Episerver.Controllers
             _requestsHelper = requestsHelper;
         }
 
-        public ActionResult Index(string error, string transaction_id, string merchant_reference)
+        public ActionResult Index(string error, string transaction_id, string session_id, string merchant_reference)
         {
-            Logger.Debug("DinteroPaymentController started.");
             if (PageEditing.PageIsInEditMode)
             {
                 return new EmptyResult();
             }
 
-            var currentCart =
-                _orderRepository.LoadCart<ICart>(PrincipalInfo.CurrentPrincipal.GetContactId(), Cart.DefaultName);
-            if (!currentCart.Forms.Any() || !currentCart.GetFirstForm().Payments.Any())
+            Logger.Debug(
+                $"DinteroPaymentController started. error: {error}. transaction_id: {transaction_id}. session_id: {session_id}. merchant_reference: {merchant_reference}.");
+
+            ICart currentCart;
+
+            if (string.IsNullOrWhiteSpace(session_id))
             {
-                throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Exception");
+                // redirect_url is called
+                currentCart =
+                    _orderRepository.LoadCart<ICart>(PrincipalInfo.CurrentPrincipal.GetContactId(), Cart.DefaultName);
+                if (!currentCart.Forms.Any() || !currentCart.GetFirstForm().Payments.Any())
+                {
+                    throw new PaymentException(PaymentException.ErrorType.ProviderError, "", "Exception");
+                }
+            }
+            else
+            {
+                currentCart = OrderHelper.GetOrderByDinteroSessionId(session_id);
+
+                // check if cart has been already processed by redirect_url
+                if (currentCart == null)
+                {
+                    return new HttpStatusCodeResult(HttpStatusCode.OK);
+                }
             }
 
             var formPayments = currentCart.Forms.SelectMany(f => f.Payments).Select(p => p.PaymentId);
@@ -70,6 +90,12 @@ namespace Dintero.Checkout.Episerver.Controllers
 
                 if (sessionData != null)
                 {
+                    var cart = _orderRepository.LoadCart<Cart>(PrincipalInfo.CurrentPrincipal.GetContactId(),
+                        Cart.DefaultName);
+                    cart[DinteroConstants.DinteroSessionMetaField] = sessionData.SessionId;
+                    cart.OrderForms[0][DinteroConstants.DinteroSessionMetaField] = sessionData.SessionId;
+                    cart.AcceptChanges();
+
                     return Redirect(sessionData.CheckoutUrl);
                 }
                 else
@@ -79,31 +105,38 @@ namespace Dintero.Checkout.Episerver.Controllers
             }
             else
             {
-                var gateway = new DinteroPaymentGateway();
-
-                cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
-
-                string redirectUrl;
-
-                if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) &&
-                    !string.IsNullOrWhiteSpace(merchant_reference))
+                lock (Lock)
                 {
-                    // TODO: temporary work around:
-                    // (get rid as soon as DinteroPaymentOption is fixed)
-                    payment.TransactionID = transaction_id;
-                    payment.TransactionType = TransactionType.Authorization.ToString();
+                    var gateway = new DinteroPaymentGateway();
 
-                    var acceptUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentLandingPage");
-                    redirectUrl = gateway.ProcessSuccessfulTransaction(currentCart, payment, transaction_id,
-                        merchant_reference, acceptUrl, cancelUrl);
-                }
-                else
-                {
-                    TempData["Message"] = "Cancel message";
-                    redirectUrl = gateway.ProcessUnsuccessfulTransaction(cancelUrl, "Cancel message");
-                }
+                    cancelUrl = UriUtil.AddQueryString(cancelUrl, "paymentMethod", "dintero");
 
-                return Redirect(redirectUrl);
+                    string redirectUrl;
+
+                    if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(transaction_id) &&
+                        !string.IsNullOrWhiteSpace(merchant_reference))
+                    {
+                        // TODO: temporary work around:
+                        // (get rid as soon as DinteroPaymentOption is fixed)
+                        payment.TransactionID = transaction_id;
+                        payment.TransactionType = TransactionType.Authorization.ToString();
+
+                        var acceptUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentLandingPage");
+                        redirectUrl = gateway.ProcessSuccessfulTransaction(currentCart, payment, transaction_id,
+                            merchant_reference, acceptUrl, cancelUrl);
+                    }
+                    else
+                    {
+                        TempData["Message"] = "Cancel message";
+                        redirectUrl = gateway.ProcessUnsuccessfulTransaction(cancelUrl, "Cancel message");
+                    }
+
+                    DinteroPaymentGateway.PostProcessPayment.PostAuthorize(payment, transaction_id, merchant_reference);
+
+                    return string.IsNullOrWhiteSpace(session_id)
+                        ? Redirect(redirectUrl)
+                        : (ActionResult) (new HttpStatusCodeResult(HttpStatusCode.OK));
+                }
             }
         }
 

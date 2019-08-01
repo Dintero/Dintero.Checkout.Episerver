@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Web;
+using Dintero.Checkout.Episerver.Interfaces;
 using Mediachase.Commerce.Core.Features;
 using Mediachase.Commerce.Extensions;
 
@@ -21,6 +22,10 @@ namespace Dintero.Checkout.Episerver
     public class DinteroPaymentGateway : AbstractPaymentGateway
     {
         private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroPaymentGateway));
+        private static Injected<IPostProcessDinteroPayment> _postProcessPayment;
+
+
+        public static IPostProcessDinteroPayment PostProcessPayment => _postProcessPayment.Service;
 
         private readonly IOrderRepository _orderRepository;
         private readonly IFeatureSwitch _featureSwitch;
@@ -93,6 +98,8 @@ namespace Dintero.Checkout.Episerver
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
 
+                    PostProcessPayment.PostCapture(result, payment);
+
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
                         $@"There was an error while capturing payment with Dintero:
                            code: {
@@ -148,6 +155,8 @@ namespace Dintero.Checkout.Episerver
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
                     }
+
+                    PostProcessPayment.PostCredit(result, payment);
 
                     return PaymentProcessingResult.CreateUnsuccessfulResult(
                         $@"There was an error while refunding payment with Dintero: code: { result.ErrorCode }; declineReason: { result.Error }");

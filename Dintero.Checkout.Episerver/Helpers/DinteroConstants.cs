@@ -4,6 +4,8 @@
     {
         public const string DinteroSystemName = "Dintero";
 
+        public const string DinteroSessionMetaField = "DinteroSessionId";
+
         public const string AccountIdParameter = "AccountId";
         public const string ClientIdParameter = "ClientId";
         public const string ClientSecretIdParameter = "ClientSecretId";
