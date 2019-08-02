@@ -131,7 +131,8 @@ namespace Dintero.Checkout.Episerver.Controllers
                         redirectUrl = gateway.ProcessUnsuccessfulTransaction(cancelUrl, "Cancel message");
                     }
 
-                    DinteroPaymentGateway.PostProcessPayment.PostAuthorize(payment, transaction_id, merchant_reference);
+                    DinteroPaymentGateway.PostProcessPayment.PostAuthorize(payment, error, transaction_id,
+                        merchant_reference);
 
                     return string.IsNullOrWhiteSpace(session_id)
                         ? Redirect(redirectUrl)
