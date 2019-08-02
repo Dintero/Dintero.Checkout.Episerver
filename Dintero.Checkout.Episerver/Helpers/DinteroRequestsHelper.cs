@@ -397,7 +397,7 @@ namespace Dintero.Checkout.Episerver.Helpers
                     var request = new DinteroRefundRequest
                     {
                         Amount = CurrencyHelper.CurrencyToInt(payment.Amount, currency.CurrencyCode),
-                        Reason = "Refund", // TODO: set reason
+                        Reason = "Refund"
                     };
 
                     var returnForm = GetCurrentReturnForm(returnForms, transaction);

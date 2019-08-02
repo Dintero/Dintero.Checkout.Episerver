@@ -237,7 +237,7 @@ namespace Dintero.Checkout.Episerver
 
                 var purchaseOrder = MakePurchaseOrder(cart, orderNumber);
 
-                redirectionUrl = UpdateAcceptUrl(purchaseOrder, payment, acceptUrl);
+                redirectionUrl = UpdateAcceptUrl(purchaseOrder, acceptUrl);
 
                 // Commit changes
                 scope.Complete();
@@ -330,12 +330,11 @@ namespace Dintero.Checkout.Episerver
             }
         }
 
-        private static string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, IPayment payment, string acceptUrl)
+        public static string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, string acceptUrl)
         {
             var redirectionUrl = UriUtil.AddQueryString(acceptUrl, "success", "true");
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "contactId", purchaseOrder.CustomerId.ToString());
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "orderNumber", purchaseOrder.OrderNumber);
-            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "email", payment.BillingAddress.Email);
             return redirectionUrl;
         }
     }

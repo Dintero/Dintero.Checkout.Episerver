@@ -8,7 +8,7 @@ namespace Dintero.Checkout.Episerver.Helpers
 {
     public static class OrderHelper
     {
-        public static ICart GetOrderByDinteroSessionId(string dinteroSessionId)
+        public static ICart GetCartByDinteroSessionId(string dinteroSessionId)
         {
             if (!string.IsNullOrEmpty(dinteroSessionId))
             {
@@ -38,6 +38,32 @@ namespace Dintero.Checkout.Episerver.Helpers
                 {
                     return null;
                 }
+            }
+
+            return null;
+        }
+
+        public static PurchaseOrder GetOrderByTrackingNumber(string orderId)
+        {
+            var orderSearchParameters = new OrderSearchParameters {SqlMetaWhereClause = $@"META.TrackingNumber = '{orderId}'"};
+
+            var orderSearchOptions = new OrderSearchOptions {Namespace = "Mediachase.Commerce.Orders"};
+            orderSearchOptions.Classes.Add("PurchaseOrder");
+            orderSearchOptions.Classes.Add("Shipment");
+            orderSearchOptions.CacheResults = false;
+            orderSearchOptions.RecordsToRetrieve = 1;
+
+            var purchaseOrders = OrderContext.Current.FindPurchaseOrders(orderSearchParameters, orderSearchOptions).ToList();
+
+            if (purchaseOrders.Count > 0)
+            {
+                // order was found
+                return purchaseOrders.FirstOrDefault();
+            }
+            else if (int.TryParse(orderId, out var orderIdNumeric))
+            {
+                // order was not found; try to get by id
+                return OrderContext.Current.GetPurchaseOrderById(orderIdNumeric);
             }
 
             return null;
