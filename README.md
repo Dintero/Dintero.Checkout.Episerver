@@ -11,7 +11,7 @@ Functionality supported in EpiServer admin:
 * Capture
 * Refund and partial refund (on item level)
 
-NB! Do not use Dintero Backoffice for capture and refund, since it is not synced with EpiServer.
+NB!Capture and Refund done in Dintero Backoffice will not update the EPiServer order management. 
 
 
 ## Integration
