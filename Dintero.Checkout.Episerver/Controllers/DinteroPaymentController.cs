@@ -42,7 +42,7 @@ namespace Dintero.Checkout.Episerver.Controllers
                 return new EmptyResult();
             }
 
-            var cancelUrl = UriUtil.GetUrlFromStartPageReferenceProperty("CheckoutPage");
+            var cancelUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentCancelPage");
             var acceptUrl = UriUtil.GetUrlFromStartPageReferenceProperty("DinteroPaymentLandingPage");
             cancelUrl = UriUtil.AddQueryString(cancelUrl, "success", "false");
 
