@@ -1,11 +1,18 @@
 # Dintero.Checkout.Episerver Plugin
 
-## Project board:
-https://github.com/orgs/Dintero/projects/4
 
 ## Description
 
 Dintero.Checkout.Episerver is a library for integrating Dintero Payment as the checkout solution for sites based on EPiServer Commerce technology.
+
+Version supported: 10.9 and higher
+
+Functionality supported in EpiServer admin: 
+* Capture
+* Refund and partial refund (on item level)
+
+NB!Capture and Refund done in Dintero Backoffice will not update the EPiServer order management. 
+
 
 ## Integration
 
