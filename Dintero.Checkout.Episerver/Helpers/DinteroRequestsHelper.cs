@@ -141,8 +141,6 @@ namespace Dintero.Checkout.Episerver.Helpers
                             {
                                 Amount =
                                     CurrencyHelper.CurrencyToInt(payment.Amount, currentCart.Currency.CurrencyCode),
-                                VatAmount = CurrencyHelper.CurrencyToInt(payment.Amount,
-                                    currentCart.Currency.CurrencyCode),
                                 Currency = currentCart.Currency.CurrencyCode,
                                 MerchantReference = orderNumber,
                                 BillingAddress =
@@ -170,6 +168,8 @@ namespace Dintero.Checkout.Episerver.Helpers
                             },
                             ProfileId = Configuration.ProfileId
                         };
+
+                        request.Order.VatAmount = request.Order.Items.Sum(item => item.VatAmount);
 
                         sessionData = SendRequest<DinteroCreateSessionResponse>(url, accessToken, "Bearer", request);
                     }
@@ -489,7 +489,7 @@ namespace Dintero.Checkout.Episerver.Helpers
 
             if (data != null && requestMethod == "POST")
             {
-                var encoding = new ASCIIEncoding();
+                var encoding = new UTF8Encoding();
                 var bytes = encoding.GetBytes(JsonConvert.SerializeObject(data));
 
                 using (var newStream = http.GetRequestStream())
