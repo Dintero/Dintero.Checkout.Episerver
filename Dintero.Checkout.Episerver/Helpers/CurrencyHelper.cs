@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Linq;
 
 namespace Dintero.Checkout.Episerver.Helpers
 {
@@ -9,11 +10,18 @@ namespace Dintero.Checkout.Episerver.Helpers
         {
             return CurrencyToInt(Convert.ToDouble(amount), currencyCode);
         }
+
         public static int CurrencyToInt(double amount, string currencyCode)
         {
-            var culture = new CultureInfo(currencyCode);
+            var culture = GetCulture(currencyCode);
             var precision = culture.NumberFormat.CurrencyDecimalDigits;
             return (int)Math.Round((amount * Math.Pow(10, precision)));
+        }
+
+        public static CultureInfo GetCulture(string currencyCode)
+        {
+            return CultureInfo.GetCultures(CultureTypes.SpecificCultures)
+                .FirstOrDefault(x => new RegionInfo(x.LCID).ISOCurrencySymbol == currencyCode);
         }
 
         private static int GetPrecision(string currencyCode)
