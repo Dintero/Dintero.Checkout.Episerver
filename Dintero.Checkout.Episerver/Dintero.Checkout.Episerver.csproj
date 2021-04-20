@@ -186,6 +186,7 @@
     <Reference Include="System.Security.Principal.Windows, Version=4.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Security.Principal.Windows.4.4.0\lib\net461\System.Security.Principal.Windows.dll</HintPath>
     </Reference>
+    <Reference Include="System.ServiceModel" />
     <Reference Include="System.Threading.AccessControl, Version=4.0.2.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Threading.AccessControl.4.4.0\lib\net461\System.Threading.AccessControl.dll</HintPath>
     </Reference>
@@ -240,6 +241,7 @@
     <Compile Include="Helpers\DinteroConfiguration.cs" />
     <Compile Include="Helpers\DinteroConstants.cs" />
     <Compile Include="Helpers\DinteroRequestsHelper.cs" />
+    <Compile Include="Helpers\LockHelper.cs" />
     <Compile Include="Helpers\OrderHelper.cs" />
     <Compile Include="Helpers\UriUtil.cs" />
     <Compile Include="Interfaces\IPostProcessDinteroPayment.cs" />
@@ -248,6 +250,7 @@
     <Compile Include="Models\DinteroCaptureRequest.cs" />
     <Compile Include="Models\DinteroCreateSessionRequest.cs" />
     <Compile Include="Models\DinteroCaptureResponse.cs" />
+    <Compile Include="Models\DinteroStore.cs" />
     <Compile Include="Models\DinteroTransactionEvent.cs" />
     <Compile Include="Models\DinteroVoidResponse.cs" />
     <Compile Include="Models\DinteroRefundResponse.cs" />

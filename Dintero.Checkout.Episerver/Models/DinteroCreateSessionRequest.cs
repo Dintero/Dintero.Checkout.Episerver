@@ -15,5 +15,8 @@ namespace Dintero.Checkout.Episerver.Models
 
         [JsonProperty(PropertyName = "profile_id")]
         public string ProfileId { get; set; }
+
+        [JsonProperty(PropertyName = "partial_payment")]
+        public bool PartialPayment { get; set; }
     }
 }

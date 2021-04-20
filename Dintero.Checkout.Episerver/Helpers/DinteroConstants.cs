@@ -5,6 +5,7 @@
         public const string DinteroSystemName = "Dintero";
 
         public const string DinteroSessionMetaField = "DinteroSessionId";
+        public const string PredictableOrderIdMetaField = "PredictableOrderId";
 
         public const string DinteroPaymentCancelPage = "DinteroPaymentCancelPage";
         public const string DinteroPaymentLandingPage = "DinteroPaymentLandingPage";

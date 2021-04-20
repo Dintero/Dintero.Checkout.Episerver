@@ -19,6 +19,10 @@ namespace Dintero.Checkout.Episerver.Business
                 DinteroConstants.DinteroSessionMetaField, MetaDataType.ShortString, 32, true, false);
             JoinField(mdContext, wrapOrder, OrderConfiguration.Instance.MetaClasses.ShoppingCartClass.Name);
             JoinField(mdContext, wrapOrder, "OrderFormEx");
+
+            var pOid = CreateMetaField(mdContext, OrderConfiguration.Instance.MetaClasses.ShoppingCartClass.Name,
+                DinteroConstants.PredictableOrderIdMetaField, MetaDataType.ShortString, 32, true, false);
+            JoinField(mdContext, pOid, OrderConfiguration.Instance.MetaClasses.ShoppingCartClass.Name);
         }
 
         private static MetaField CreateMetaField(MetaDataContext mdContext, string metaDataNamespace, string name,

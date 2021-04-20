@@ -43,6 +43,41 @@ namespace Dintero.Checkout.Episerver.Helpers
             return null;
         }
 
+        public static ICart GetCartByPredictableOrderId(string predictableOrderId)
+        {
+            if (!string.IsNullOrEmpty(predictableOrderId))
+            {
+                try
+                {
+                    var sqlMetaWhereClause = $@"META.{DinteroConstants.PredictableOrderIdMetaField} = '{predictableOrderId}'";
+                    var orderSearchOptions = new OrderSearchOptions();
+                    orderSearchOptions.Classes.Add("ShoppingCart");
+                    orderSearchOptions.CacheResults = false;
+                    orderSearchOptions.RecordsToRetrieve = 1;
+
+                    var results = Cart.Search(
+                        new OrderSearch
+                        {
+                            SearchParameters = new OrderSearchParameters { SqlMetaWhereClause = sqlMetaWhereClause },
+                            SearchOptions = orderSearchOptions
+                        }, out var number);
+
+
+                    if (number > 0)
+                    {
+                        return results.FirstOrDefault();
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    return null;
+                }
+            }
+
+            return null;
+        }
+
         public static PurchaseOrder GetOrderByTrackingNumber(string orderId)
         {
             var orderSearchParameters = new OrderSearchParameters {SqlMetaWhereClause = $@"META.TrackingNumber = '{orderId}'"};

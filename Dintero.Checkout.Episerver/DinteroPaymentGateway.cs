@@ -24,7 +24,6 @@ namespace Dintero.Checkout.Episerver
         private static readonly ILogger Logger = LogManager.GetLogger(typeof(DinteroPaymentGateway));
         private static Injected<IPostProcessDinteroPayment> _postProcessPayment;
 
-
         public static IPostProcessDinteroPayment PostProcessPayment => _postProcessPayment.Service;
 
         private readonly IOrderRepository _orderRepository;
@@ -91,8 +90,10 @@ namespace Dintero.Checkout.Episerver
                 {
                     // return true meaning the capture request is done,
                     // actual capturing must be done on Dintero.
-
-                    var result = _requestsHelper.CaptureTransaction(payment, purchaseOrder);
+                    var transaction = _requestsHelper.GetTransactionDetails(payment.TransactionID, _requestsHelper.GetAccessToken());
+                    var skipItems = payment.Amount != 0 && payment.Amount < purchaseOrder.GetTotal().Amount && !string.IsNullOrEmpty(transaction.PaymentProduct) &&
+                                    !transaction.PaymentProduct.Equals("instabank", StringComparison.InvariantCultureIgnoreCase);
+                    var result = payment.Amount == 0? new TransactionResult { Success = true } : _requestsHelper.CaptureTransaction(payment, purchaseOrder, skipItems);
                     if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
@@ -112,7 +113,7 @@ namespace Dintero.Checkout.Episerver
 
                 if (payment.TransactionType == TransactionType.Void.ToString())
                 {
-                    var result = _requestsHelper.VoidTransaction(payment);
+                    var result = payment.Amount == 0 ? new TransactionResult { Success = true } : _requestsHelper.VoidTransaction(payment);
                     if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
@@ -150,7 +151,7 @@ namespace Dintero.Checkout.Episerver
                         return PaymentProcessingResult.CreateUnsuccessfulResult("No items found for refunding.");
                     }
 
-                    var result = _requestsHelper.RefundTransaction(payment, returnForms, purchaseOrder.Currency);
+                    var result = payment.Amount == 0 ? new TransactionResult { Success = true } : _requestsHelper.RefundTransaction(payment, returnForms, purchaseOrder.Currency);
                     if (result.Success)
                     {
                         return PaymentProcessingResult.CreateSuccessfulResult(string.Empty);
@@ -196,6 +197,7 @@ namespace Dintero.Checkout.Episerver
             return UriUtil.AddQueryString(cancelUrl, "message", errorMessage);
         }
 
+
         /// <summary>
         /// Processes the successful transaction, will be called when Dintero server processes 
         /// the payment successfully and redirect back.
@@ -207,10 +209,27 @@ namespace Dintero.Checkout.Episerver
         /// <param name="acceptUrl">The redirect url when finished.</param>
         /// <param name="cancelUrl">The redirect url when error happens.</param>
         /// <returns>The redirection url after processing.</returns>
-        public string ProcessSuccessfulTransaction(ICart cart, IPayment payment, string transactionId,
+        public virtual string ProcessSuccessfulTransaction(ICart cart, IPayment payment, string transactionId,
             string orderNumber, string acceptUrl, string cancelUrl)
         {
+            Logger.Debug("DinteroPaymentGateway.ProcessSuccessfulTransaction starting...");
+
             if (cart == null)
+            {
+                return cancelUrl;
+            }
+
+            // check whether transaction was authorized by Dintero (prevent order creation on manual hack)
+            var transaction = _requestsHelper.GetTransactionDetails(payment.TransactionID);
+
+            if (transaction == null)
+            {
+                Logger.Debug($"Unable to get Dintero transaction by id: [{payment.TransactionID}]!");
+                return cancelUrl;
+            }
+
+            Logger.Debug($"Dintero transaction #'{payment.TransactionID}' status = [{transaction.Status}]!");
+            if (transaction.Status != "AUTHORIZED" && transaction.Status != "ON_HOLD")
             {
                 return cancelUrl;
             }
@@ -222,6 +241,8 @@ namespace Dintero.Checkout.Episerver
                 // It must be done before execute workflow to ensure payments which should mark as processed.
                 // To avoid get errors when executed workflow.
                 PaymentStatusManager.ProcessPayment(payment);
+
+                var isOnHold = transaction.Status == "ON_HOLD";
 
                 var errorMessages = new List<string>();
                 var cartCompleted = DoCompletingCart(cart, errorMessages);
@@ -235,9 +256,9 @@ namespace Dintero.Checkout.Episerver
                 // Save the transact from Dintero to payment.
                 payment.TransactionID = transactionId;
 
-                var purchaseOrder = MakePurchaseOrder(cart, orderNumber);
+                var purchaseOrder = MakePurchaseOrder(cart, orderNumber, isOnHold);
 
-                redirectionUrl = UpdateAcceptUrl(purchaseOrder, acceptUrl);
+                redirectionUrl = UpdateAcceptUrl(purchaseOrder, acceptUrl, isOnHold);
 
                 // Commit changes
                 scope.Complete();
@@ -246,14 +267,75 @@ namespace Dintero.Checkout.Episerver
             return redirectionUrl;
         }
 
-        private IPurchaseOrder MakePurchaseOrder(ICart cart, string orderNumber)
+        public virtual IPurchaseOrder ProcessOnHoldOrder(int purchaseOrderId, string transaction_id)
+        {
+            var transaction = _requestsHelper.GetTransactionDetails(transaction_id);
+
+            if (transaction == null)
+            {
+                Logger.Debug($"Unable to get Dintero transaction by id: {transaction_id}!");
+            }
+            else
+            {
+                var purchaseOrder = PurchaseOrder.LoadByOrderGroupId(purchaseOrderId);
+                Logger.Debug($"DinteroPaymentGateway.ProcessOnHoldOrder: Dintero transaction status: {transaction.Status}. Order status: {purchaseOrder.Status}.");
+
+                if (transaction.Status == "FAILED")
+                {
+                    OrderStatusManager.CancelOrder(purchaseOrder);
+                }
+                else if (transaction.Status == "AUTHORIZED")
+                {
+                    Logger.Debug($"Releasing order and shipment {purchaseOrder.TrackingNumber}!");
+                    OrderStatusManager.ReleaseHoldOnOrder(purchaseOrder);
+
+                    var order = (IPurchaseOrder) purchaseOrder;
+                    //order.OrderStatus = OrderStatus.InProgress;
+                    if (order.Forms != null && order.Forms.Any())
+                    {
+                        var orderForm = order.Forms.FirstOrDefault();
+                        if (orderForm != null)
+                        {
+                            foreach (var shipment in orderForm.Shipments)
+                            {
+                                if (shipment is Shipment s && CanHoldShipmentBeReleased(s))
+                                {
+                                    OrderStatusManager.PickForPackingOrderShipment(s);
+                                }
+                            }
+                        }
+                    }
+
+                    var orderRepository = ServiceLocator.Current.GetInstance<IOrderRepository>();
+                    orderRepository.Save(purchaseOrder);
+
+                    PostProcessPayment.PostReleaseOnHold(purchaseOrder.TrackingNumber);
+
+                    Logger.Debug($"Order {purchaseOrder.TrackingNumber} was released!");
+                }
+
+                purchaseOrder.AcceptChanges();
+
+                Logger.Debug("DinteroPaymentGateway.ProcessOnHoldOrder completed.");
+                return purchaseOrder;
+            }
+
+            return null;
+        }
+
+        protected virtual bool CanHoldShipmentBeReleased(Shipment shipment)
+        {
+            return true;
+        }
+
+        protected virtual IPurchaseOrder MakePurchaseOrder(ICart cart, string orderNumber, bool isOnHold)
         {
             var purchaseOrderLink = _orderRepository.SaveAsPurchaseOrder(cart);
             var purchaseOrder = _orderRepository.Load<IPurchaseOrder>(purchaseOrderLink.OrderGroupId);
 
             _orderRepository.Delete(cart.OrderLink);
 
-            purchaseOrder.OrderStatus = OrderStatus.InProgress;
+            purchaseOrder.OrderStatus = isOnHold ? OrderStatus.OnHold : OrderStatus.InProgress;
             purchaseOrder.OrderNumber = orderNumber;
 
             UpdateLastOrderOfCurrentContact(CustomerContext.Current.CurrentContact, purchaseOrder.Created);
@@ -272,7 +354,7 @@ namespace Dintero.Checkout.Episerver
             }
         }
 
-        private bool DoCompletingCart(ICart cart, IList<string> errorMessages)
+        protected virtual bool DoCompletingCart(ICart cart, IList<string> errorMessages)
         {
             var isSuccess = true;
 
@@ -330,11 +412,12 @@ namespace Dintero.Checkout.Episerver
             }
         }
 
-        public static string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, string acceptUrl)
+        public static string UpdateAcceptUrl(IPurchaseOrder purchaseOrder, string acceptUrl, bool isOnHold = false)
         {
             var redirectionUrl = UriUtil.AddQueryString(acceptUrl, "success", "true");
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "contactId", purchaseOrder.CustomerId.ToString());
             redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "orderNumber", purchaseOrder.OrderNumber);
+            redirectionUrl = UriUtil.AddQueryString(redirectionUrl, "isOnHold", isOnHold.ToString());
             return redirectionUrl;
         }
     }

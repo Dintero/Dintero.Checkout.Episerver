@@ -35,5 +35,8 @@ namespace Dintero.Checkout.Episerver.Models
 
         [JsonProperty(PropertyName = "items")]
         public List<DinteroOrderLine> Items { get; set; }
+
+        [JsonProperty(PropertyName = "store")]
+        public DinteroStore Store { get; set; }
     }
 }

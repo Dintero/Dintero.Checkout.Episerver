@@ -7,6 +7,8 @@ namespace Dintero.Checkout.Episerver.Interfaces
     {
         void PostAuthorize(IPayment payment, string error, string transactionId, string orderNumber);
 
+        void PostReleaseOnHold(string orderNumber);
+
         void PostCapture(TransactionResult response, IPayment payment);
 
         void PostCredit(TransactionResult response, IPayment payment);
